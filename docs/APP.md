@@ -45,7 +45,7 @@ Ordine di caricamento in `index.html`: `three.min.js` → `GLTFLoader.js` → `a
 - Debug URL: `?model=<url.glb>` carica un body personalizzato.
 - Docker: `docker compose up -d --build` → `http://localhost:6480`. In produzione l'immagine viene da `ghcr.io/jstplink/crafting:latest`.
 - `version.json` è generato dal Dockerfile (versione CI `1.0.<run>`, sha, data). In locale non esiste. La scritta build mostra solo `v<APP_VERSION>`; i dettagli CI (build, sha, data) sono nel tooltip (`title`) quando `version.json` esiste. Il pulsante versione (stessa scritta) apre il menu versioni (§3b).
-- **Versione app**: `APP_VERSION` in `app.js` (oggi `0.4.3`) va incrementata a ogni versione e la versione va congelata con `scripts/snapshot.py` (§3b).
+- **Versione app**: `APP_VERSION` in `app.js` (oggi `0.5.0`) va incrementata a ogni versione e la versione va congelata con `scripts/snapshot.py` (§3b).
 - nginx serve html/js con `no-cache` e `vendor/` con cache di 7 giorni.
 - **Cache-busting** (Dockerfile): a ogni build ogni `src="….js"` locale di **ogni** `index.html` (radice e `versions/<v>/`) riceve `?v=<sha>`, così né browser né CDN mischiano script vecchi con html nuovo. Gli script nuovi che si aggiungono a un `index.html` sono coperti in automatico (purché locali e senza `?`).
 
@@ -75,22 +75,39 @@ Obiettivo: poter aprire **qualsiasi versione passata** dell'app e confrontarne i
 | 0.4.0 | Baseline (tag `v0.4.0` = commit `685adf4`): Body/Arms, parametri moduli, slot cargo, view mode. Salvataggio `crafting.save.v1` |
 | 0.4.1 | Solo cache-busting nel Dockerfile (commit `ccb8dc9`). Nessuno snapshot: UI identica alla 0.4.0 |
 | 0.4.2 | Colori per tipo di modulo di nuovo attivi (rosso primary, giallo secondary, blu engine), scritta build ridotta a `v<versione>`. Snapshot **retroattivo** dal commit `da61880`. Salvataggio `crafting.save.v1` |
+| 0.5.0 | Grande passata UX + regole: rarità a targhetta LVn con sfumatura, tipo modulo dalla forma della riga, cargo a scomparsa e overview verticale, viste della lista socket, annulla/ripristina/reset, guida iniziale, etichette 3D, nuovo modello del calore (fire time / cooldown), solo le foglie si cambiano, DPS/valore/velocità valutati sul massimo del gioco, loadout quality, Body con moduli integrati in 3 varianti (Rusted / Ranger / Elite, 12 Body). Ogni intervento UX è un esperimento ON/OFF (§3c). Salvataggio `crafting.save.0.5.0` |
 | 0.4.3 | Leggibilità: testo più grande e più contrasto, stat chiave su ogni riga + delta + BEST + ordinamento cargo, overview più chiara. Ogni intervento è un esperimento ON/OFF (§3c). Salvataggio `crafting.save.0.4.3` |
 
-## 3c. Esperimenti (flag) della 0.4.3
+## 3c. Esperimenti (flag) della 0.4.3 e della 0.5.0
 
-Tre interruttori nel menu versioni (in alto a destra), tutti ON di default, salvati in `localStorage` (`crafting.flags.<versione>`).
+Interruttori nel menu versioni (in alto a destra), tutti ON di default, salvati in `localStorage` (`crafting.flags.<versione>`).
 Definiti in `app.js`: `FLAGS`, `flag(id)`, `loadFlags`, `applyFlags`, `window.craftingExperiments`. Con **tutti spenti l'app è uguale alla 0.4.2**.
+I primi tre sono della 0.4.3; dalla 0.5.0 anche `rarityTag`, `typeShape`, `blockedReason`, `undoRedo`, `intro`, `socketLabels`, `compactCard`, `bodyButton`, `listModes`, `maxRatings`, `slideCargo`, `stackBadge`, `rarityFade`, `shipQuality` (tutti ON di default).
 
 | Flag | Cosa cambia | Dove |
 |---|---|---|
 | `bigText` "Readable text" | Font più grandi (etichette maiuscole ≥ 15px, testo ≥ 16px) e `--dim` più chiaro (`#9aa3ab`) + testi molto spenti schiariti (`#8a939b`) | Solo CSS: blocco `#stage.ux-big …` in fondo a `index.html`. La classe `ux-big` è messa sullo stage da `applyFlags` |
 | `keyStats` "Key stat on rows" | Riga slot: icona+valore della stat chiave (DPS armi, velocità motori), senza glifo taglia. Riga cargo a 2 linee: `×n · DPS/SPEED valore · ▲/▼ delta · BEST`. Chip `SORT · …` nella riga TARGET. Ordinamento cargo | `KEYSTAT`, `statOf`, `SORT_FN`, `cargoItems`, `leftRow`, `renderRight`, `cycleSort`; CSS `.ks`, `.cg-row.two`, `.sub`, `.dlt`, `.best`, `.sortchip` |
-| `overview` "Clearer overview" | Potenza mostrata **una volta** (tolta dall'header sinistro e dal footer della card, che dà solo il verdetto); riga unica **SHIP VALUE + FREE SOCKETS** (liberi/totali per taglia, con delta in anteprima); slot vuoti chiamati "Empty"; leggera compattazione (`ux-ov`) per lasciare spazio al cargo | `hdrPower` in `renderLeft`, `valRow` in `renderRight`, `verdict/foot` in `renderCard`, `leftRow`; CSS `.valrow.sum`, `#stage.ux-ov …` |
+| `typeShape` "Type by row shape" *(0.5.0)* | Il **tipo di modulo** non è più un colore sull'icona (sfondo neutro `--ic-bg`, tab attiva sottolineata in arancione): è la **forma dell'estremità sinistra della riga** (blocco icona `.ic`) nel pannello sinistro e nel cargo — primary = **a punta**, secondary = **arrotondata**, engine = **tacca a V**. Il blocco icona è ritagliato (`clip-path` / `border-radius`) e lo sfondo della riga parte dopo l'icona (`background-size` con `!important`, perché le regole di stato riscrivono lo shorthand `background`), così il ritaglio mostra il pannello; niente bordo sinistro né `box-shadow` di selezione sulle righe sagomate. Legenda nella guida (card MODULES). La targhetta LV resta rettangolare (la prima prova sagomava la targhetta: scartata). La vista 3D mantiene i colori per tipo | `applyFlags` (`ux-tshape`), guida in `renderIntro`; CSS `#stage.ux-tshape …`, `.tsh` |
+| `rarityTag` "Rarity tag" *(0.5.0)* | Backlog 2+3. Rarità come **targhetta piena `LV1`…`LV7`** nel colore della rarità (testo scuro), **prima del nome** nelle righe slot/cargo, nel titolo della card e nel tag 3D (`rarDot` la usa quando il flag è ON): il livello si legge anche senza distinguere i colori. Righe **neutre**: niente sfumatura né striscia di rarità, lo sfondo colorato resta solo alla selezione. Storia: pallini 1–7 scartati (sembravano una carica), gemma colorata scartata (solo colore); la targhetta "LVn" è stata chiesta esplicitamente dall'utente | `rarTag`, `rarDot`, `leftRow`, righe cargo in `renderRight`; CSS `.rtag`, `#stage.ux-rar …` |
+| `compactCard` "Compact info card" *(0.5.0)* | Card informativa più stretta (660px, `left:630`) e **ancorata in basso** (`bottom:112px`, cresce verso l'alto) invece che larga 780 sotto la nave; statistiche in **griglia a 2 colonne** di celle corte (`ccell`: icona + etichetta breve `CARD_SHORT`, poi `vecchio → nuovo` e delta in colonna fissa da 50px), etichetta completa nel tooltip. Vale anche per gli arms (uscite e socket liberi) | `CARD_SHORT`, `ccell`, `cgrid`, `renderCard`; CSS `#stage.ux-card #card`, `.cgrid`, `.cst` |
+| `bodyButton` "Body switcher" *(0.5.0)* | L'header arancione del Body è solo un **titolo** ("BODY" + UNLOCKED). Sotto c'è una riga **‹ NOME ›** (`.bodysw`, con "n / N UNLOCKED") che scorre i Body sbloccati: frecce cliccabili (`data-bstep`), ←/→ con focus `body` (si raggiunge salendo oltre il primo slot). **Niente finestra di selezione**: con il flag A in focus body non fa nulla e `renderPicker` non viene più aperto | `renderLeft` (`.bodysw`), `act` (focus body), hint in `renderBottom`; CSS `.bodysw`, `.bsw` |
+| `blockedReason` "Why it won't fit" *(0.5.0)* | Backlog 6. Le righe cargo non montabili mostrano **sempre** il motivo nella colonna azione: `NO POWER +n` (punti oltre il generatore, `overBy`) o `CARGO FULL`; icona e testo della riga attenuati | `why`/`overBy` in `renderRight`; CSS `#stage.ux-block …` |
+| `undoRedo` "Undo / redo" *(0.5.0)* | Backlog 11. **Annulla/ripristina** le modifiche alla build (L3/R3 del pad, `Ctrl+Z` / `Ctrl+Y` o `Ctrl+Shift+Z`, un solo suggerimento "Undo / Redo" in basso con i due glifi cliccabili). Cronologia **per Body**, max 30 passi, solo in sessione (non salvata); memorizza solo gli `att`, il cargo si aggiusta per **differenza** (`cargoFor`) e l'operazione viene rifiutata ("CAN'T UNDO · CARGO") se il cargo non copre. Registrano: equip, unequip, remove all, random build, reset. **Reset build** (X con focus sull'header del Body): torna a `DEFAULT_ATT[body]` (vuoto se non definito), saltando i moduli che mancano in cargo | `S.hist`, `record`, `histOf`, `cargoFor`, `stepHistory`, `resetBuild`, `DEFAULT_ATT`; hint in `renderBottom` |
+| `intro` "First-time guide" *(0.5.0)* | Backlog 11. Schermata "CRAFTING · HOW IT WORKS" con 4 card (Body, Arms, Modules, Power & Heat) alla **prima apertura** (chiave globale `crafting.intro.seen`); si chiude con A/B/Enter/Esc/click. Si riapre da **GUIDE nella barra in basso** (accanto a HOLD TO LEAVE): **pressione breve di Start** (< 350 ms; tenuto resta "Hold to leave"), **H** da tastiera o click. `act('guide')` funziona da qualsiasi focus | `S.intro`, `openIntro`, `closeIntro`, `renderIntro`, `#intro`, hint `.guidehint`, rilascio di Start in `pollPad`; CSS `.in-*` |
+| `socketLabels` "3D socket labels" *(0.5.0)* | Backlog 9. Etichetta piccola su **ogni modulo montato e socket libero** nella vista 3D (glifo taglia + nome breve, "Empty" tratteggiata); gli arms non hanno etichetta (le hanno le loro uscite). Il socket selezionato tiene il tag grande; quello in hover evidenzia la propria etichetta (il tag grande di hover non viene mostrato). Ogni frame: nascoste se dietro lo scafo (raycast su `V.hull` ogni 4 frame) o se si sovrappongono a un'etichetta più vicina o ai tag grandi (priorità: hover, poi distanza). Hover/click su un'etichetta = hover/selezione del socket. Assenti in view mode | `buildLabels`, `placeLabels`, `V.labels` (ship3d.js), `#labels3d`; in app.js il pointermove/click riconoscono `.lab3d`; CSS `.lab3d` |
+| `listModes` "Socket list views" *(0.5.0)* | Viste della lista socket: **tab** sopra la lista (`.lmodes`, click) e, come l'ordinamento del cargo, **X breve** (tastiera `X`/`O`) con focus slot cicla **TREE** (albero per taglia), **FILLED** (moduli montati / socket vuoti), **TYPE** (Primary, Secondary, Engines, poi Empty), **RARITY** (LV7…LV1, poi Empty), **POWER** (moduli per consumo decrescente con il power sulla riga e `usato / generatore` nel titolo, poi Empty). **Smontare** con focus slot diventa **X tenuto** (hold 900 ms, hint "Sort · hold: Unequip", `holdRelease` distingue tap/hold); `Delete` e il ✕ della riga smontano subito. Gli arms compaiono solo in TREE; le viste non-albero sono piatte. ↑/↓ seguono l'ordine mostrato (`navOrder` = `listGroups` appiattito). `S.listMode` non è salvato | `LIST_MODES`, `listGroups`, `navOrder`, `cycleListMode`, `act('sort')` (cargo o lista secondo il focus), `holdRelease`, `holdEls.unq`, `leftRow(s, up, statKey)`; CSS `.lmodes` |
+| `maxRatings` "Rated vs max" *(0.5.0)* | **PRIMARY DPS** e **SECONDARY DPS** in un blocco dedicato con numero grande, **SHIP VALUE** e **MAX SPEED**: il **numero è colorato** e ha dietro una **sfumatura** (come le righe dei moduli, `.rated-bg`) nel colore della fascia; niente barra, la **% è solo nel tooltip**. La fascia si calcola rispetto al **massimo del gioco**: la miglior build legale di **qualunque Body dei dati** (esclusi i `.glb` custom), con copie illimitate di qualsiasi modulo del catalogo (taglie, extension solo sui socket del Body, split, generatore) — `gameMax(metric)` = max su `BODY_LIST` di `bestBuild(metric, body)`. Oggi è COLOSSUS: 2048 / 1512 DPS, valore 26.880, velocità 804. Colore = fascia di rarità della percentuale (`floor(%·7)+1`: LV1 marrone … LV7 oro). Calcolo esatto con programmazione dinamica `bestBuild(metric)` (vedi commento nel codice), memorizzato per Body. Primario e secondario hanno ciascuno il proprio massimo | `bestBuild(metric, body)` (metriche `priDps`, `secDps`, `value`, `speed`), `gameMax`, `rate`, `dpsRow`, `statCell(…, rated)`, `valRow`; CSS `.dpsblock`, `.rated`, `.ratedp` |
+| `slideCargo` "Slide-in cargo" *(0.5.0)* | Il cargo **non è più sempre a schermo**: vive in `#cargoPanel` (450×780, stessa posizione della lista socket) e **scorre da sinistra sopra la lista** solo in focus `cargo` (A su un socket, o click su una riga socket); si chiude con B, con "BACK TO SOCKETS" o cliccando fuori. La colonna destra diventa **solo overview**, stretta (`#right` a 1540, 340 largo) e **alta quanto il suo contenuto** (niente spazio vuoto in fondo); ogni sezione ha lo **stesso spazio sopra e sotto** il suo divisore (10px): barra power sotto l'etichetta, statistiche in una colonna. Il **pannello Body/socket è largo 374** (10% più dell'overview, per nomi di Body fino a 16 caratteri; rientro albero 18px per livello); la vista 3D va da 424 a 1540 (1116px). Se il nome del Body non entra nella riga ‹ › scorre avanti e indietro (`.bname.scroll`, `--over` calcolato in `renderLeft`). Il cargo a scomparsa resta largo 450 (sporge sulla vista 3D mentre è aperto). Nella barra in basso: "Category" solo col cargo aperto, "View mode" solo col cargo chiuso; **"Remove all" solo col cargo chiuso e solo se c'è almeno un pezzo montato**, sia col focus sugli slot sia sulla riga del Body (dove si finisce cambiando Body) | `renderRight` (split `#right` / `#cargoPanel`), click handler, `renderBottom`, `applyFlags` (`ux-slide` + `resizeShip`); CSS `#stage.ux-slide …`, `.cg-back` |
+| `stackBadge` "Stack count on icon" *(0.5.0)* | Quantità in cargo come **numerino sull'angolo in basso a destra dell'icona** della riga cargo (`.qty`), tolta dalla linea dei parametri e dal nome | righe cargo in `renderRight`; CSS `.cg-row .ic .qty` |
+| `rarityFade` "Rarity fade" *(0.5.0)* | Torna la **sfumatura nel colore della rarità** sulle righe slot/cargo, ma parte da sotto il nome e **svanisce a due terzi della riga** (0→36→66%, colore al 58% in partenza) così i dati a destra restano leggibili; hover/selezione hanno le loro varianti. Sovrascrive le righe neutre di `rarityTag` (la targhetta LV resta) | CSS `#stage.ux-rfade …` (classe da `applyFlags`) |
+| `shipQuality` "Loadout quality" *(0.5.0)* | **LOADOUT QUALITY** nello **stesso blocco di SHIP VALUE** (con `overview`): livello medio dei moduli montati (`t.gear`, "AVG LV 2.0") con delta in anteprima, e **un quadratino per modulo** nel colore della sua rarità con dentro la **forma del socket** in cui è montato (▲■●), dal migliore | `calc` (`t.lvs`, `t.mq`, `t.gear`), `qualityRow`; CSS `.qrow`, `.qtiles`, `.valrow.sum.grp` |
+| `overview` "Clearer overview" | Potenza mostrata **una volta** (tolta dall'header sinistro e dal footer della card, che dà solo il verdetto); blocco **SHIP VALUE** (con `shipQuality` insieme a LOADOUT QUALITY; il riepilogo FREE SOCKETS è stato tolto); slot vuoti chiamati "Empty"; leggera compattazione (`ux-ov`) per lasciare spazio al cargo | `hdrPower` in `renderLeft`, `valRow` in `renderRight`, `verdict/foot` in `renderCard`, `leftRow`; CSS `.valrow.sum`, `#stage.ux-ov …` |
 
 Dettagli `keyStats`:
 - **Delta** = stat del pezzo in cargo − stat del **modulo montato nel socket selezionato**, solo se dello stesso `kind`; `=` se uguale; nessun delta se il socket è vuoto o contiene un arm.
 - **BEST** = pezzo con la stat più alta fra quelli **montabili** (rispetto a potenza e cargo), solo se ce ne sono ≥ 2 e batte l'eventuale modulo montato dello stesso tipo. Se il montato è già il migliore non compare nessun BEST.
+- La riga cargo mostra la stat **per cui è ordinata**: con `power` mostra `POWER n` e il delta di potenza rispetto al modulo montato (qualsiasi tipo), senza BEST; altrimenti la stat chiave.
 - **Ordinamenti** (`S.sort`, si cicla con il chip, tasto `O`, o **X** del pad in focus cargo): `stat` (stat chiave ↓, poi rarità), `rarity` (rarità ↓, poi stat), `power` (potenza ↑, poi stat). Non vale per la tab Arms. `S.sort` non viene salvato.
 
 ## 4. Modello di dominio
@@ -105,11 +122,20 @@ Dettagli `keyStats`:
 Un socket di taglia N accetta **solo** elementi di taglia N. `sg(n,px,mode)` disegna la forma SVG del socket.
 
 ### 4.2 Body (`BODIES`, `BODY_LIST`, variabile `BODY`)
-Ogni body ha: `id, name, value, tag, integrity, shield, generator` (budget di potenza), `heatsink`,
+Ogni body ha: `id, name, value, tag, integrity, shield, generator` (budget di potenza), heatsink = `heatCap` (calore massimo che contiene) + `heatCool` (calore smaltito al secondo quando non spara),
 `boost` (carica boost), `cam` (distanza camera), `plat` (scala piattaforma), `look` (raggi e colore dello scafo procedurale),
 `sockets[]` (`{id,size,pos,dir}` in spazio modello), opzionale `model3d` (gruppo three.js da `.glb`).
-Body definiti: **ZEPHYROS** (8 socket, misto), **NEEDLE** (4×P1, leggero), **COLOSSUS** (6×P3, pesante), **KESTREL** (5 socket, misto).
-- `BODIES_IN_GAME = 12` è solo il totale mostrato in "UNLOCKED n/12"; `unlockedBodies()` conta i body non `CUSTOM`.
+Scafi definiti: **ZEPHYROS** (6 socket: 2×P3, 3×P2, 1×P1 sotto; i due P1 sul muso sono stati tolti), misto, **NEEDLE** (4×P1, leggero), **COLOSSUS** (6×P3, pesante), **KESTREL** (5 socket, misto).
+- **Moduli integrati**: ogni Body ha **sempre 2 armi primarie integrate + 1 engine integrato** (`body.integrated = [{key,mod,pos}]`). Fanno parte del Body: **non si cambiano, non sono nel cargo** (non stanno in `MODS`), **non consumano power**, **non contano nella loadout quality**; il loro valore è **dentro** `body.value`. Danno il **danno di base, il calore di base, la velocità di base e il consumo di boost di base** della nave (li somma `calc`). Le statistiche dipendono dal **livello** L (1–7) dei moduli integrati (`INTEG_GUN`, engine `Core Drive Mk<L>`: speed `16+11L`).
+- **3 varianti per scafo** = 3 Body distinti (**12 in totale**), stessi socket/scafo, diversi per armi **e** rarità degli integrati (tier dello scafo `BODY_TIER`: Needle 1, Kestrel 2, Zephyros 3, Colossus 4):
+  | Variante | id | Livello integrati | Armi integrate |
+  |---|---|---|---|
+  | **RUSTED** (scarsa) | scafo + `_rs` | tier | 2× Keel Gatling |
+  | **RANGER** (standard) | scafo (id storico: i vecchi salvataggi finiscono qui) | tier + 1 | Keel Laser + Keel Gatling |
+  | **ELITE** (rara) | scafo + `_el` | tier + 3 (max 7) | 2× Keel Laser |
+  Poiché le statistiche seguono il livello, la variante rara di uno scafo debole supera quella scarsa dello scafo successivo (**"seconda vita"** degli scafi deboli: es. Needle Elite 216 DPS di base > Kestrel Rusted 112). Laser = più danno ma surriscaldano prima; gatling = fire time più lungo. Nome = `SCAFO VARIANTE` (max 16 caratteri). Generati in codice da `BODY_TIER`, `INTEG_POS` (posizioni sullo scafo), `INTEG_GUN`, `INTEG_VARIANTS`. I salvataggi di Body non più esistenti (es. le vecchie varianti `…B`) restituiscono i loro moduli al cargo.
+- **Ordine dei Body** (`BODY_LIST`, frecce ‹ › e "n / N"): per **qualità intrinseca, dalla peggiore alla migliore**, ordinato in `boot()` con `bodyQuality = ½ · livello integrati / 7 + ½ · bestBuild('value', body) / gameMax('value')`: gli scafi si **mescolano** (Needle Rusted → Needle Ranger → Kestrel Rusted → Needle Elite → Kestrel Ranger → Zephyros Rusted → Zephyros Ranger → Kestrel Elite → Colossus Rusted → Zephyros Elite → Colossus Ranger → Colossus Elite).  I body `.glb` custom si aggiungono in fondo.
+- `BODIES_IN_GAME = 20` è solo il totale mostrato in "UNLOCKED n/12"; `unlockedBodies()` conta i body non `CUSTOM`.
 - Regole di progettazione: niente socket sul retro dello scafo; i socket non devono sovrapporsi in vista frontale.
 - Ogni body ha **la propria build**: `S.att` è quella del body attivo, `S.builds[bodyId]` le altre.
 
@@ -171,17 +197,19 @@ Ogni socket: `id, size, pos, dir, depth, parent, idx` e, se ospita un arm, `pylo
 ### 6.2 Totali — `calc(att)` → `t`
 `power` (somma potenza moduli), `heat` (somma calore), `speed`, `boostUse`, `priDps`, `secDps`, `value` (= `BODY.value` + valore moduli),
 `sock[1..3].{free,total}`, `maxSpeed = speed` (il body non ha velocità base: la danno i motori),
-`boostTime = BODY.boost / boostUse` (0 se nessun consumo).
+`boostTime = BODY.boost / boostUse` (0 se nessun consumo),
+Tutti i totali includono i **moduli integrati** del Body (danno, calore, velocità, boost; niente power). `fireTime = BODY.heatCap / heat` (secondi di fuoco continuo di tutte le primarie partendo da freddo; `Infinity` senza primarie), `coolTime = BODY.heatCap / BODY.heatCool`.
 `T0 = calc(S.att)` è la build corrente.
 
 ### 6.3 Regole di legalità
 - **Potenza**: `fits` se `power <= BODY.generator` (moduli soltanto). Superarla blocca l'equip ("NOT ENOUGH POWER").
-- **Calore**: **informativo, non bloccante**. `carico = heat / BODY.heatsink`; oltre 100% → "OVERHEATS ON SUSTAINED FIRE".
+- **Calore**: **informativo, non bloccante**. La generazione è **progressiva**: sparando si va **sempre** in overheat, la build decide **dopo quanto** (`fireTime`) e quanto dura il raffreddamento (`coolTime`). Non esiste più il "carico %" né il "fuoco infinito".
+- **Solo le foglie si cambiano**: un arm che regge pezzi sulle sue uscite (`holdsParts(sid)`) è **bloccato**: niente replace né unequip finché non si tolgono i pezzi (toast "REMOVE THE PARTS ON THIS ARM FIRST"). A sul socket bloccato non apre il cargo; il cargo mostra "THIS ARM HOLDS n PARTS" (`cargoItems` restituisce vuoto); la riga ha un lucchetto (`.lockq`) al posto del ✕; la card lo spiega. "Remove all", reset, undo/redo e random build lavorano sull'intera build e non sono toccati dalla regola.
 - **Cargo**: dopo l'operazione `cargoSlots <= 25`, altrimenti "CARGO FULL".
 - **Extension**: solo su socket radice (`canMount`).
 
 ### 6.4 Operazioni sulla build
-- `attachTo(att, cargo, sid, item)`: **pura**. Rimuove tutto il sottoalbero di `sid` (i moduli tornano in cargo, gli arms spariscono), poi monta `item` (se dato, un modulo lo toglie dal cargo). Ritorna `{att,cargo,ret}`; `ret` = id restituiti.
+- `attachTo(att, cargo, sid, item)`: **pura**. Rimuove tutto il sottoalbero di `sid` (i moduli tornano in cargo, gli arms spariscono; per la regola delle foglie in pratica il sottoalbero è vuoto, salvo "Remove all"), poi monta `item` (se dato, un modulo lo toglie dal cargo). Ritorna `{att,cargo,ret}`; `ret` = id restituiti.
 - `makePreview(sid, to)` → `{sid,to,att,ret,t1,fits,room}`: simulazione senza modificare lo stato.
 - `computePreview()` → `PV`: priorità a `hoverRemove` (passaggio sul ✕ di uno slot → anteprima rimozione), poi `hoverCargo`, poi la riga cargo evidenziata se `focus==='cargo'`; altrimenti `null`.
 - `equip(id, sid)` esegue (con toast e `flash`); se monti un arm seleziona automaticamente il suo primo figlio `<sid>.0`.
@@ -196,9 +224,10 @@ in **coordinate assolute a 1920×1080**. Font: Rajdhani (Google Fonts) con fallb
 |---|---|---|---|
 | Barra alta | `#top` | 0,0 · 1920×160 | `renderTop()` |
 | Pannello sinistro | `#left` | 40,180 · 450 · max 780 alto | `renderLeft()` |
-| Vista nave | `#shipbox` | 490,168 · 920×468 | `renderShip()` (ship3d.js) |
+| Vista nave | `#shipbox` | 490,168 · 920×468 (con `compactCard` alta **812**, fino alla barra dei comandi, e inquadratura alzata del 10% con `camera.setViewOffset` in `resizeShip` perché la card copre la parte bassa; con `slideCargo` 424→1540) | `renderShip()` (ship3d.js) |
 | Card confronto | `#card` | 560,640 · 780 largo | `renderCard()` |
-| Colonna destra | `#right` | 1410,180 · 470×780 | `renderRight()` |
+| Colonna destra | `#right` | 1410,180 · 470×780 (con `slideCargo`: 1540, 340 largo, solo overview) | `renderRight()` |
+| Cargo a scomparsa | `#cargoPanel` | 40,180 · 450×780, sopra la lista socket, solo con `slideCargo` e focus cargo | `renderRight()` |
 | Selettore body | `#picker` | 510,180 · 880×780, sopra il centro | `renderPicker()` |
 | Barra bassa | `#bottom` | in basso, 100 alto | `renderBottom()` |
 | Toast | `#toast` | centro alto | `toast(msg, kind)` |
@@ -212,16 +241,17 @@ HUD finto (emblema, barre, velocità 0 m/s, livello), titolo stazione, tab con "
 
 ### 7.2 Pannello sinistro (`renderLeft`, `leftRow`)
 - **Header** (`lp-head bodysel`): pulsanti ‹ › per cambiare body (`data-bstep`), nome cliccabile (`data-bpick`) che apre il selettore, "UNLOCKED n/12", potenza `usata / generator` (arancione se sale, rosso se eccede, con anteprima; **nascosta con il flag `overview`**).
-- **Lista socket** divisa per sezioni P3/P2/P1 (`sec-title`). Ogni riga (`.slot`): icona (forma socket tratteggiata se vuoto, icona famiglia se modulo, icona arm se braccio), nome (tooltip = nome completo), stat chiave (flag `keyStats`), glifo taglia (non con `keyStats`), uscite se arm, glifo `A` se selezionato+focus, pulsante ✕ (`data-unq`) per smontare.
+- **Sezione INTEGRATED** in cima alla lista (prima di ogni vista): le 3 righe dei moduli integrati (`integRow`) con targhetta LV, nome, stat chiave e lucchetto; non hanno `data-slot`, quindi non si selezionano e la navigazione le salta.
+- **Lista socket** divisa per sezioni P3/P2/P1 (`sec-title`). Ogni riga (`.slot`): icona (forma socket tratteggiata se vuoto, icona famiglia se modulo, icona arm se braccio), nome **completo e mai tagliato** (se non entra scorre avanti e indietro, `.nmx.scroll`, come il nome del Body; i nomi brevi restano solo nelle etichette 3D), stat chiave (flag `keyStats`), glifo taglia (non con `keyStats`), uscite se arm, glifo `A` se selezionato+focus, pulsante ✕ (`data-unq`) per smontare.
 - Indentazione di 24px per livello (`--d`) e linee ad albero fino al braccio genitore (`--up`).
 - Stati CSS: `sel`, `focus`, `hov`, `flash`, `pv-add` ("→ NEW"), `pv-rem` (barrato), `rar` (tinta rarità via `--rc`), `free` (vuoto, tratteggiato; con `overview` mostra "EMPTY"), `pyl`, `child`.
 
 ### 7.3 Colonna destra
 **Overview** (`.ov`, titolo "SPACESHIP OVERVIEW", mostra "PREVIEW" quando `PV` è attivo):
-1. `SHIP VALUE` con delta (con `overview`, nella stessa riga di `FREE SOCKETS ▲n/tot ■n/tot ●n/tot`, con delta in anteprima).
-2. `POWER n / generator`: barra a segmenti (uno per punto di generatore): `on` (in uso), `add` (verde, verrebbe aggiunto), `rem` (righe rosse, verrebbe liberato), `over` (tutta rossa se si eccede) + delta.
-3. `HEAT LOAD %`: barra continua `hbar` (cur/add/rem), stato "∞ SUSTAINED FIRE" o "OVERHEATS…", tooltip "?" (solo hover mouse).
-4. Griglia 2×3 di `statCell`: INTEGRITY, SHIELD POWER (costanti del body), PRIMARY DPS, SECONDARY DPS, MAX SPEED, BOOST DURATION, con badge delta (verde migliora / rosso peggiora / giallo `wn` per costi in aumento; `dcls` decide in base a `STAT_META.better`).
+1. `SHIP VALUE` con delta (con `overview` in un blocco insieme a LOADOUT QUALITY e, con `maxRatings`, alla barretta "% OF MAX"). I socket liberi non sono più riepilogati nell'overview.
+2. `POWER n / generator`: barra a segmenti alta 13px (uno per punto di generatore): `on` (in uso, **bianco**: l'azzurro resta alla rarità), `add` (verde, verrebbe aggiunto), `rem` (righe rosse, verrebbe liberato), `over` (tutta rossa se si eccede) + delta.
+3. `FIRE TIME` (secondi, `∞` senza primarie) e a destra **COOLDOWN** (secondi, `.hnum`): **solo due numeri**, niente barra (la barra del ciclo è stata scartata perché poco chiara). Delta del fire time in secondi nello slot fisso, tooltip "?" (solo hover mouse).
+4. Con `maxRatings` tutte le statistiche sono **righe uguali a quelle dei DPS** (`lineRow` / `dpsRow`: icona + etichetta a sinistra, numero grande, slot delta fisso; stessa larghezza e altezza 42px): PRIMARY DPS, SECONDARY DPS, poi il blocco MAX SPEED + BOOST DURATION e, **separato** con una linea, il blocco INTEGRITY + SHIELD POWER (costanti del body). Senza il flag resta la griglia di `statCell`, con badge delta (verde migliora / rosso peggiora / giallo `wn` per costi in aumento; `dcls` decide in base a `STAT_META.better`).
 
 **Cargo** (`.cg`): titolo con `slot usati / 25`, riga `TARGET` (taglia del socket selezionato; a destra il chip di ordinamento con `keyStats`, altrimenti il nome del pezzo montato), 4 categorie (Arms, Primary, Secondary, Engines) con glifi LT/RT, lista.
 - `cargoItems()` filtra per **taglia del socket selezionato**, categoria, disponibilità (`cargo>0`, arms sempre) e `canMount`.
@@ -238,7 +268,7 @@ HUD finto (emblema, barre, velocità 0 m/s, livello), titolo stazione, tab con "
 Griglia 2 colonne di card (`.bcard`): nome, "IN USE", schema dall'alto dei socket (`schematic`), stats del body, conteggio socket per taglia, parti montate. Navigazione: ←→ ±1, ↑↓ ±2, A conferma, B/click fuori chiude.
 
 ### 7.6 Barra bassa (`renderBottom`)
-Suggerimenti dei tasti **che cambiano col contesto** (picker / focus body / focus slot / focus cargo). In focus cargo, con `keyStats`, c'è anche **Sort** (X / `O`). Sempre presenti: rotazione (RS), View mode, `INPUT · <pref>` (pill che cicla gamepad → keyboard → auto), **HOLD TO LEAVE** (START/Esc tenuto premuto 900 ms → overlay "UNDOCKING…"). "Remove all" (Y / R) è hold-to-confirm 900 ms (`HOLD_MS`, `holdStart/holdEnd/holdDone`, barra di avanzamento via `--p`).
+Suggerimenti dei tasti **che cambiano col contesto** (picker / focus body / focus slot / focus cargo). In focus cargo, con `keyStats`, c'è anche **Sort** (X / `O`). Con `undoRedo`: "Undo / Redo" (L3 R3, glifi cliccabili, attenuati se la cronologia è vuota) e, in focus body, "Reset build" (X); con `intro`, in focus body, "Guide" (Y). La categoria da tastiera mostra solo `Tab`; la rotazione è "Rotate" per tutti. **Lo spazio è al limite**: in tastiera + focus cargo i suggerimenti arrivano a toccare la pill INPUT; ogni suggerimento nuovo va misurato (o compensato) in tutti i contesti e con entrambi i dispositivi. Sempre presenti: rotazione (RS), View mode, `INPUT · <pref>` (pill che cicla gamepad → keyboard → auto), **HOLD TO LEAVE** (START/Esc tenuto premuto 900 ms → overlay "UNDOCKING…"). "Remove all" (Y / R) è hold-to-confirm 900 ms (`HOLD_MS`, `holdStart/holdEnd/holdDone`, barra di avanzamento via `--p`).
 `glyph(n)` restituisce il glifo gamepad o il tasto tastiera secondo `dev()`.
 
 ### 7.7 Debug / mockup-only
@@ -250,35 +280,38 @@ Il pulsante viola **DEBUG · RANDOM BUILD** (`#dbgRandom` → `randomBuild()`) m
 - `renderShip()`: **ricostruisce da zero** `V.dyn` a ogni chiamata (`clearDyn` libera geometrie/materiali). Se c'è un'anteprima con `PV.to` usa `PV.att`/`layout(PV.att)`: le parti nuove vengono disegnate "fantasma" (verde se `fits`, rosso altrimenti), quelle in rimozione in `rem`.
 - Per ogni socket: puntoni degli arms (`strut`, sfere di giunzione), modulo (`buildModule` per `kind`: primary/secondary/engine, scala `MOD_SCALE[size]`), **marker** (sprite forma+colore) **solo sui socket liberi** e non in view mode, sfera invisibile per il picking (`V.pickers`).
 - **Outline** (`addOutline`, hull invertito) sul socket selezionato (arancione) o in hover (bianco); assente in view mode.
-- **Tag** HTML (`#tagSel`, `#tagHov`) ancorati alla posizione proiettata del socket, con taglia e nome (`placeTag` ogni frame).
+- **Moduli integrati** disegnati sullo scafo alle posizioni `body.integrated[].pos` (armi sul muso, engine dietro), sempre stile normale: niente picking, tag, etichette o hover.
+- **Anelli colorati dei socket** (bordo nel colore della taglia attorno alla piastra di ogni socket dello scafo, creati in `buildHull` con `userData.rimOf`): **nascosti dove è montato un arm** (in `renderShip`), visibili sotto i moduli e sui socket liberi.
+- **Arms non interattivi in 3D**: nessuna sfera di picking, nessun outline di hover, nessun tag; un arm selezionato dalla lista mostra **solo** l'outline arancione.
+- **Tag** HTML (`#tagSel`, `#tagHov`) ancorati alla posizione proiettata del socket, con taglia e nome (`placeTag` ogni frame). Con il flag `socketLabels` il tag di hover non compare e si aggiungono le etichette piccole di `#labels3d` (`buildLabels` in `renderShip`, `placeLabels` ogni frame, vedi §3c).
 - `animateShip()`: camera orbitale con smorzamento verso `S.rot` (yaw, pitch, distanza) + `V.pan` (solo view mode), leggera oscillazione della nave, pulsazione del marker selezionato, effetto "pop" dopo l'equip, fiamme dei motori animate.
 - `pickSlot(e)`: raycast sui picker → id socket (usato da hover e click).
-- Camera: `TARGET=(0,.5,-.3)`; limiti in `ROT()`: normale pitch −.25..1.1, dist 8..26; in view mode pitch ±1.45, dist 3..45.
+- Camera: `TARGET=(0,.5,-.3)`; distanza iniziale `homeRot()` = `BODY.cam × 1.3` (zoom out, così braccia e moduli restano inquadrati); limiti in `ROT()`: normale pitch −.25..1.1, dist 8..34; in view mode pitch ±1.45, dist 3..45.
 
 ### 8.1 Body personalizzati da `.glb`
-Trascinando un `.glb/.gltf` sullo stage (o con `?model=`), `setHull` cerca i nodi chiamati `sock_p<size>_<n>` (regex tollerante: `socket_p2-1`, ecc.), il cui asse locale **+Z** è la direzione di uscita. Se ne trova, crea `BODIES['custom<N>']` (tag `CUSTOM`, valori di default: value 1500, integrity 20000, shield 10000, generator 26, heatsink 40, boost 100), lo aggiunge a `BODY_LIST` e lo seleziona. Il modello è scalato a 6 unità sul lato maggiore. **I body custom non sopravvivono al reload** (il salvataggio scarta body sconosciuti).
+Trascinando un `.glb/.gltf` sullo stage (o con `?model=`), `setHull` cerca i nodi chiamati `sock_p<size>_<n>` (regex tollerante: `socket_p2-1`, ecc.), il cui asse locale **+Z** è la direzione di uscita. Se ne trova, crea `BODIES['custom<N>']` (tag `CUSTOM`, valori di default: value 1500, integrity 20000, shield 10000, generator 26, heatCap 400, heatCool 60, boost 100), lo aggiunge a `BODY_LIST` e lo seleziona. Il modello è scalato a 6 unità sul lato maggiore. **I body custom non sopravvivono al reload** (il salvataggio scarta body sconosciuti).
 
 ## 9. Input
 
-Le azioni logiche passano tutte da **`act(name)`**: `up down left right a b x sort catNext catPrev view`. `act` smista in base al contesto (view mode → picker → focus body → focus slot/cargo).
+Le azioni logiche passano tutte da **`act(name)`**: `up down left right a b x sort catNext catPrev view undo redo guide`. `act` smista in base al contesto (guida aperta → view mode → picker → undo/redo → focus body → focus slot/cargo).
 
 ### 9.1 Flusso di navigazione
-- **Focus `slots`** (default): ↑↓ cambiano socket (`moveSel`, salendo oltre il primo si passa a `body`); **A** → passa al cargo (se vuoto, toast informativo); **X** smonta.
+- **Focus `slots`** (default): ↑↓ cambiano socket nell'ordine della vista (`moveSel`, salendo oltre il primo si passa a `body`, dove ←/→ cambiano Body); **A** → passa al cargo (se vuoto, toast informativo; su un arm bloccato, toast); con `listModes` **X breve** cambia ordinamento della lista e **X tenuto** smonta, senza il flag X smonta (mai su un arm bloccato).
 - **Focus `cargo`**: ↑↓ evidenziano una riga (→ anteprima live); **A** equipaggia; **B / ←** torna a `slots`; **LT/RT** cambiano categoria; **X** (pad) / `O` cambia l'ordinamento (con `keyStats`).
-- **Focus `body`**: ←→ cambia body, **A** apre il selettore, ↓ torna agli slot.
+- **Focus `body`**: ←→ cambia body, **A** apre il selettore (non con `bodyButton`: niente selettore), **X** reset build (`undoRedo`), ↓ torna agli slot.
 - Dopo un `equip` il focus torna a `slots`.
 
 ### 9.2 Tastiera
-`↑/W ↓/S` naviga · `Enter/Space` = A · `Backspace` = B · `←/→` · `Del/X` smonta · `Tab / Shift+Tab` categoria · `O` ordinamento cargo · `V` view mode · `R` (tenuto) rimuovi tutto · `Esc` (tenuto) lascia; in picker chiude; in view mode esce.
+`↑/W ↓/S` naviga · `Enter/Space` = A · `Backspace` = B · `←/→` · `Del/X` smonta (in focus body: reset build) · `Tab / Shift+Tab` categoria · `O` ordinamento cargo · `V` view mode · `R` (tenuto) rimuovi tutto · `Ctrl+Z` / `Ctrl+Y` (o `Ctrl+Shift+Z`) annulla / ripristina · `H` guida · `Esc` (tenuto) lascia; in picker chiude; in view mode esce; con la guida aperta la chiude.
 Nota: i tasti `Q/E` sono mostrati come glifi LB/RB ma **non sono associati a nulla**.
 
 ### 9.3 Gamepad (mapping standard, `pollPad` ogni frame)
-A=0 B=1 X=2 Y=3 LB=4 RB=5 LT=6 RT=7 View=8 Start=9 D-pad 12–15. Stick sinistro Y = su/giù (con ripetizione a 90 ms dopo 380 ms). Stick destro = rotazione camera. In view mode: stick sinistro = pan, trigger = zoom, B/View = esci. LT/RT = categoria; Y (tenuto) = rimuovi tutto; Start (tenuto) = lascia; **X in focus cargo = ordinamento** (negli altri focus X smonta).
+A=0 B=1 X=2 Y=3 LB=4 RB=5 LT=6 RT=7 View=8 Start=9 D-pad 12–15. Stick sinistro Y = su/giù (con ripetizione a 90 ms dopo 380 ms). Stick destro = rotazione camera. In view mode: stick sinistro = pan, trigger = zoom, B/View = esci. LT/RT = categoria; Y (tenuto) = rimuovi tutto; Start (tenuto) = lascia, **Start breve (< 350 ms) = guida** (`intro`); **X in focus cargo = ordinamento del cargo**, **in focus slot breve = ordinamento della lista / tenuto = smonta** (`listModes`), in focus body = reset build; **L3 / R3 (click degli stick, 10/11) = annulla / ripristina** (non LB/RB: in gioco cambiano le tab in alto).
 `inputPref='auto'` cambia i glifi in base all'ultimo dispositivo usato; `gamepadconnected` mostra un toast.
 
 ### 9.4 Mouse
 - **Hover** riga cargo / riga slot / ✕ / socket nella vista 3D → aggiorna `S.hover*` → anteprima e outline (ogni cambio chiama `renderAll`).
-- **Click** slot o socket 3D → seleziona (focus `slots`); **click riga cargo → equipaggia**; ✕ smonta; tab categorie; chip `SORT` (`data-sort`); hint della barra bassa attivano l'azione corrispondente; header body apre selettore.
+- **Click** slot o socket 3D → seleziona (focus `slots`); con `slideCargo` il click su una riga socket apre anche il cargo, e un click fuori dal cargo aperto lo chiude; **click riga cargo → equipaggia**; ✕ smonta; tab categorie; chip `SORT` (`data-sort`); hint della barra bassa attivano l'azione corrispondente; header body apre selettore.
 - **Vista 3D**: trascina = ruota (soglia 5px per distinguere dal click), rotella = zoom, doppio click = reset camera. Tasto destro/centrale/Shift+drag = pan (solo view mode).
 
 ### 9.5 View mode (`setView`)
@@ -289,14 +322,14 @@ Tasto `V` / View del pad / pulsante "EXIT VIEW MODE". `#shipbox` occupa tutto lo
 - Chiave = `crafting.save.<APP_VERSION>` (una per versione). Se manca, si legge la storica `crafting.save.v1` (`LEGACY_SAVE_KEY`).
 - Flag esperimenti: `crafting.flags.<APP_VERSION>`.
 - Non salva: selezione, categoria, ordinamento, camera, view mode, preferenza input.
-- Al caricamento scarta id sconosciuti al catalogo attuale e allinea `t` arm/modulo; i moduli nuovi partono con uno stack pieno; se l'id body non esiste usa ZEPHYROS. Per azzerare: cancellare la chiave della versione da localStorage.
+- Al caricamento scarta id sconosciuti al catalogo attuale e allinea `t` arm/modulo; scarta anche i montaggi su **socket che non esistono più** (es. socket tolti da un Body: `layout(att, body)`), rimettendo i moduli in cargo; i moduli nuovi partono con uno stack pieno; se l'id body non esiste usa ZEPHYROS. Per azzerare: cancellare la chiave della versione da localStorage.
 
 ## 11. Boot (`boot()`)
 `loadLocal` → `loadFlags` → `applyFlags` → camera `homeRot()` → scritta build → `renderTop` → `initShip` → `renderAll` → avvio `pollPad` → fetch di `version.json` per completare la scritta build.
 
 ## 12. Convenzioni CSS/UI da rispettare
-- Colore dei **tipi di modulo** (dalla 0.4.2): primary rosso `--pri`, secondary giallo `--sec`, engine blu `--eng`, su icone delle righe (`.slot`, `.cg-row`), bordo della tab attiva e modelli 3D (`KIND_COL` in `ship3d.js`). La 0.4.0/0.4.1 li teneva solo per icona: ora **taglia socket** (forma+colore), **rarità** (tinta riga) e **tipo modulo** convivono, quindi non aggiungere altri significati al colore.
-- Rarità: solo colore (tinta riga `--rc`, striscia sull'icona, `rdot`).
+- Colore dei **tipi di modulo** (dalla 0.4.2): primary rosso `--pri`, secondary giallo `--sec`, engine blu `--eng`, su icone delle righe (`.slot`, `.cg-row`), bordo della tab attiva e modelli 3D (`KIND_COL` in `ship3d.js`). Con il flag `typeShape` le icone diventano neutre e il tipo passa alla **forma dell'estremità sinistra della riga** (§3c); il 3D resta colorato. La 0.4.0/0.4.1 li teneva solo per icona: ora **taglia socket** (forma+colore), **rarità** (tinta riga) e **tipo modulo** convivono, quindi non aggiungere altri significati al colore.
+- Rarità: con il flag `rarityTag` una **targhetta `LVn`** nel colore della rarità prima del nome e righe neutre; senza il flag tinta riga `--rc`, striscia sull'icona, `rdot`. Niente pallini/barrette (sembrano una carica) né solo colore (gemma, scartata).
 - I delta nelle statistiche **non devono cambiare il layout**: usare slot a larghezza fissa (`dslot`) o badge assoluti (`.sd`), e `visibility:hidden` (`.sd.off`).
 - **Tipografia** (regola dell'esperimento `bigText`): etichette MAIUSCOLE ≥ 15px, testo normale ≥ 16px, niente sotto i 14px per ciò che si legge. Testi secondari: `--dim`; i grigi ancora più spenti (`#5c…`, `#6b…`) hanno contrasto < 4.5:1 e vanno evitati per testo nuovo (usare `#8a939b` o più chiaro).
 - **Ogni modifica UX confrontabile va dietro un flag** (§3c): il CSS nuovo si scopa con una classe sullo stage (`ux-big`, `ux-ov`) o si genera solo quando il flag è attivo, così con il flag spento resta il comportamento precedente.
@@ -347,19 +380,14 @@ Nasce da un'analisi di leggibilità dell'app. Da riprendere all'inizio di ogni n
 Convenzione: ogni intervento nuovo va dietro un flag (§3c) e si rilascia come versione nuova (§3b), così si può confrontare.
 
 **Fatti (0.4.3):** 1 testo leggibile, 4 stat chiave sulle righe (+ delta, BEST, ordinamento), 5 overview più chiara.
+**Fatti (0.5.0) (flag `rarityTag`, `blockedReason`, `undoRedo`, `intro`, `socketLabels`, §3c):** 2+3 rarità a targhetta LVn e righe neutre, 6 motivo "non si può" sempre visibile, 8 nomi mai tagliati (nome completo che scorre se non entra), 11 annulla/ripristina + reset build + guida alla prima apertura, 9 etichette 3D sui socket collegate alla lista.
+**Scartato:** 10 (debug e pill INPUT restano: sono strumenti del mockup, non della versione finale).
 
 | # | Intervento | Cosa cambierebbe | Note |
 |---|---|---|---|
-| 2 | Rarità non solo a colore | Badge "LV5" o pip numerici accanto al nome; il colore resta come rinforzo | Dalla 0.4.2 colore di tipo modulo, di taglia socket e di rarità convivono: il punto è più utile. Farlo insieme al 3 |
-| 3 | Rarità in conflitto con la selezione | Riga neutra, rarità solo su striscia laterale + badge; sfondo colorato riservato alla selezione | Quasi solo CSS |
-| 6 | Stati "non si può" sempre visibili | "NO POWER" / "CARGO FULL" oggi solo su focus/hover: mostrarli sempre con il motivo ("+3 oltre il generatore"), riga attenuata | Piccolo. La classe `nopow` già scurisce la riga |
-| 7 | Calore spiegato senza mouse | Sostituire il tooltip "?" (solo hover) con una riga di testo fissa sotto la barra | Con il gamepad il tooltip non è raggiungibile |
-| 8 | Nomi troncati | Nome breve + sottotitolo di famiglia, oppure solo icona di famiglia | Già attenuato nella 0.4.3 (tooltip col nome, niente glifo taglia sui moduli); restano 4–13px di troncamento nelle righe annidate profonde |
-| 9 | Collegamento pannello ↔ 3D | Etichette persistenti sui socket, uguali a quelle della lista | Il più grosso: tocca `ship3d.js` e il posizionamento delle etichette |
-| 10 | Rumore in cima | Nascondere DEBUG · RANDOM BUILD e la pill INPUT dietro `?debug` o in un angolo | Facile. Da decidere se la pill INPUT serve ancora ai test |
-| 11 | Extra d'uso | Annulla/ripristina l'ultima modifica, "reset build", avviso alla prima apertura | Nessuno esiste. L'annulla è il più utile: un errore di equipaggiamento oggi non si recupera |
+| 7 | Calore spiegato senza mouse | Il tooltip "?" è solo hover | Dal nuovo modello del calore la riga dice già "OVERHEAT → COOLDOWN n s": resta da rendere raggiungibile la spiegazione col gamepad |
 
-Ordine suggerito: 2+3, poi 6, poi 11 (annulla), poi 9.
+Resta aperto solo il 7.
 
 **Pendenze tecniche**
 - Tag git `v0.4.1` sul remoto punta al commit `61babe6` (mio, pre-merge) invece che a `ccb8dc9`. Correzione: `git push origin :refs/tags/v0.4.1 && git tag -f v0.4.1 ccb8dc9 && git push origin v0.4.1` (l'assistente non può farla: è bloccata come operazione distruttiva).
