@@ -4,7 +4,7 @@
     {
       "name": "mockup",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "6480", "--directory", "mockup"],
+      "runtimeArgs": ["scripts/devserver.py", "6480"],
       "port": 6480
     }
   ]

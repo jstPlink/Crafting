@@ -28,7 +28,7 @@ const SIZE = {
 const SIZE_ORDER = [1,2,3];   // small sockets first, large at the bottom
 
 // app version: bumped on every commit (the CI build number is shown next to it)
-const APP_VERSION = '0.4.0';
+const APP_VERSION = '4.2';
 
 const KIND = {
   primary:   { cls:'pri', label:'Primary Weapons',   short:'Primary' },
@@ -605,7 +605,7 @@ function renderRight(){
     const label = !room ? 'CARGO FULL' : !fits ? 'NO POWER' : (curIt?'REPLACE':'EQUIP');
     return `<div class="cg-row ${pyl?'pyl':KIND[m.kind].cls+' rar'} ${focus?'sel':''} ${hov?'hov':''} ${fits?'':'nopow'}" data-item="${m.id}" data-i="${i}"${pyl?'':` style="--rc:${rarCol(m)}"`}>
       <div class="ic">${ico(pyl?'pylon':m.fam)}</div>
-      <div class="mid"><div class="nm">${m.name}${pyl?'':`<small>×${S.cargo[m.id]}</small>`}</div></div>
+      <div class="mid"><div class="nm"><span class="nmt">${m.name}</span>${pyl?'':`<small>×${S.cargo[m.id]}</small>`}</div></div>
       ${pyl?outGlyphs(m):`<span class="outs">${sg(m.size,14)}</span>`}
       <div class="act">${focus||hov?label:''}${focus?glyph('A'):''}</div>
     </div>`;
@@ -1087,9 +1087,9 @@ addEventListener('resize',fit); fit();
 function boot(){
   loadLocal();
   Object.assign(S.rot, homeRot());
-  $('#build').textContent = `v${APP_VERSION} · LOCAL`;
+  $('#build').textContent = `v${APP_VERSION}`;
   renderTop(); initShip(); renderAll(); requestAnimationFrame(pollPad);
   fetch('../../version.json',{cache:'no-store'}).then(r=>r.ok?r.json():Promise.reject()).then(v=>{
-    $('#build').textContent = `v${APP_VERSION} · BUILD ${v.version} · ${v.sha}`; $('#build').title = v.date;
+    $('#build').title = `build ${v.version} · ${v.sha} · ${v.date}`;   // CI details only on hover
   }).catch(()=>{});
 }

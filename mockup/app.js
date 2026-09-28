@@ -28,7 +28,7 @@ const SIZE = {
 const SIZE_ORDER = [1,2,3];   // small sockets first, large at the bottom
 
 // app version: bumped on every commit (the CI build number is shown next to it)
-const APP_VERSION = '0.5.0';
+const APP_VERSION = '5.0';
 
 const KIND = {
   primary:   { cls:'pri', label:'Primary Weapons',   short:'Primary' },
@@ -261,28 +261,31 @@ const homeRot = () => ({ yaw:.75, pitch:.34, d:BODY.cam*1.3 });   // zoomed out:
 /* ---------- experiments: features switchable from the version menu (switcher.js) ----------
    Each flag guards ONE UX change, so it can be compared with the old behaviour.
    State is kept per version in localStorage. */
+// promoted to standard behaviour: no longer switchable, always on
+const ALWAYS_ON = { bigText:true, overview:true, slideCargo:true };
+// switches phrased as "Hide …": the underlying feature is the opposite of the switch
+const HIDDEN_BY = { undoRedo:'hideUndo', shipQuality:'hideQuality' };
+// `since` = version that added the feature (shown next to it in the features window of the version menu)
 const FLAGS = {
-  bigText:  { label:'Readable text',    desc:'Larger type and higher contrast on dim text',                         on:true },
-  keyStats: { label:'Key stat on rows', desc:'DPS / speed on every part, delta vs mounted, BEST tag, cargo sorting', on:true },
-  overview: { label:'Clearer overview', desc:'Power shown once, free-socket summary, empty slots named',            on:true },
-  // backlog §16 points 2+3, 6, 8
-  typeShape:    { label:'Type by row shape', desc:'No type colour on icons: the left end of a module row is pointed (primary), round (secondary) or notched (engine)', on:true },
-  rarityTag:    { label:'Rarity tag',       desc:'Rarity as a coloured LV1-LV7 tag before the name; neutral rows, tint kept for selection', on:true },
-  blockedReason:{ label:'Why it won\'t fit', desc:'NO POWER (+n over) / CARGO FULL always shown on rows that cannot be mounted', on:true },
-  undoRedo:     { label:'Undo / redo',      desc:'Undo / redo the last build changes (L3 / R3, Ctrl+Z / Ctrl+Y); Reset build on the Body header (X)', on:true },
-  intro:        { label:'First-time guide', desc:'Short how-it-works screen on first open; reopen from GUIDE in the bottom bar (short press Start, or H)', on:true },
-  socketLabels: { label:'3D socket labels', desc:'Every mounted part and free socket is labelled in the 3D view, linked to the list on hover / click', on:true },
-  compactCard:  { label:'Compact info card', desc:'Narrower info card anchored at the bottom, stats in two columns with short labels', on:true },
-  bodyButton:   { label:'Body switcher',    desc:'Body header is a plain title; a ‹ NAME › row switches between unlocked Bodies (no picker window)', on:true },
-  slideCargo:   { label:'Slide-in cargo',   desc:'Cargo hidden until you pick a socket: it slides in from the left over the socket list; the overview becomes a tall narrow column', on:true },
-  stackBadge:   { label:'Stack count on icon', desc:'Cargo quantity shown as a small count on the icon corner, not among the stats', on:true },
-  rarityFade:   { label:'Rarity fade',      desc:'Rarity colour fading from under the name to the right, leaving the stats readable', on:true },
-  maxRatings:   { label:'Rated vs max',     desc:'Primary / secondary DPS and ship value rated against the best build this Body can reach (bar + % in rarity colours)', on:true },
-  shipQuality:  { label:'Loadout quality',  desc:'Overview shows the average rarity (LV) of mounted modules and one rarity-coloured segment per module', on:true },
-  listModes:    { label:'Socket list views', desc:'Left list can be shown as tree, filled / empty, by type, by rarity or by power: SORT chip, X (tap) like the cargo; hold X to unequip', on:true },
+  keyStats:     { since:'4.3', label:'Key stat on rows', desc:'DPS / speed on every part, delta vs mounted, BEST tag, cargo sorting', on:true },
+  typeShape:    { since:'5.0', label:'Type by row shape', desc:'No type colour on icons: the left end of a module row is pointed (primary), round (secondary) or notched (engine)', on:true },
+  rarityTag:    { since:'5.0', label:'Rarity tag',       desc:'Rarity as a coloured LV1-LV7 tag before the name; neutral rows, tint kept for selection', on:true },
+  rarityFade:   { since:'5.0', label:'Rarity fade',      desc:'Rarity colour fading from under the name to the right, leaving the stats readable', on:true },
+  blockedReason:{ since:'5.0', label:'Why it won\'t fit', desc:'NO POWER (+n over) / CARGO FULL always shown on rows that cannot be mounted', on:true },
+  hideUndo:     { since:'5.0', label:'Hide undo / redo', desc:'Hides undo / redo (L3 / R3, Ctrl+Z / Ctrl+Y) and Reset build on the Body row (X). Turn off to use them', on:true },
+  intro:        { since:'5.0', label:'First-time guide', desc:'Short how-it-works screen on first open; reopen from GUIDE in the bottom bar (short press Start, or H)', on:true },
+  socketLabels: { since:'5.0', label:'3D socket labels', desc:'Every mounted part and free socket is labelled in the 3D view, linked to the list on hover / click', on:true },
+  compactCard:  { since:'5.0', label:'Compact info card', desc:'Narrower info card anchored at the bottom, stats in two columns with short labels', on:true },
+  bodyButton:   { since:'5.0', label:'Body switcher',    desc:'Body header is a plain title; a ‹ NAME › row switches between unlocked Bodies (no picker window)', on:true },
+  stackBadge:   { since:'5.0', label:'Stack count on icon', desc:'Cargo quantity shown as a small count on the icon corner, not among the stats', on:true },
+  maxRatings:   { since:'5.0', label:'Rated vs max',     desc:'Primary / secondary DPS, ship value and max speed coloured by how close they are to the best build in the game', on:true },
+  hideQuality:  { since:'5.0', label:'Hide loadout quality', desc:'Hides the LOADOUT QUALITY block (average LV + one rarity tile per mounted module). Turn off to show it', on:true },
+  listModes:    { since:'5.0', label:'Socket list views', desc:'Left list as tree, filled / empty, by type, by rarity or by power (tabs, or X tap like the cargo); hold X to unequip', on:true },
 };
-const FLAGS_KEY = 'crafting.flags.' + APP_VERSION;
-const flag = id => FLAGS[id].on;
+// saves and switches are stored under the version key; 5.0 was published as 0.5.0 and keeps that key
+const STORE_VER = { '5.0':'0.5.0' }[APP_VERSION] || APP_VERSION;
+const FLAGS_KEY = 'crafting.flags.' + STORE_VER;
+const flag = id => ALWAYS_ON[id] || (HIDDEN_BY[id] ? !FLAGS[HIDDEN_BY[id]].on : FLAGS[id].on);
 function loadFlags(){
   try{ const d = JSON.parse(localStorage.getItem(FLAGS_KEY)); for(const id in FLAGS) if(typeof d?.[id]==='boolean') FLAGS[id].on = d[id]; }catch(e){}
 }
@@ -298,7 +301,7 @@ function applyFlags(){
   $('#stage').classList.toggle('ux-block', flag('blockedReason'));
 }
 window.craftingExperiments = {
-  items: () => Object.entries(FLAGS).map(([id,f]) => ({ id, label:f.label, desc:f.desc, on:f.on })),
+  items: () => Object.entries(FLAGS).map(([id,f]) => ({ id, label:f.label, desc:f.desc, on:f.on, since:f.since })),
   toggle(id){
     const f = FLAGS[id]; if(!f) return;
     f.on = !f.on;
@@ -1061,7 +1064,7 @@ function renderBottom(){
 
 /* ---------- local save: builds survive a page refresh ---------- */
 // every version keeps its own save; a version that has none yet starts from the 0.4.0 one
-const SAVE_KEY = 'crafting.save.' + APP_VERSION, LEGACY_SAVE_KEY = 'crafting.save.v1';
+const SAVE_KEY = 'crafting.save.' + STORE_VER, LEGACY_SAVE_KEY = 'crafting.save.v1';
 let lastSave = '';
 function saveLocal(){
   const builds = { ...S.builds, [BODY.id]: S.att };

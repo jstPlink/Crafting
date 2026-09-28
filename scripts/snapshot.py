@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """Freeze the working copy (mockup/) as a switchable version.
 
-    python scripts/snapshot.py 0.4.3 --notes "Readability pass"
-    python scripts/snapshot.py 0.4.0 --save-key crafting.save.v1   # legacy save key
+    python scripts/snapshot.py 5.1 --notes "One line for the version menu"
+    python scripts/snapshot.py 5.0 --force --save-key crafting.save.0.5.0   # re-freeze, keeping an old save key
+
+Versions are major.minor (4.0, 4.2, 4.3, 5.0 …). They were published as 0.4.0 … 0.5.0 before the
+renumbering: those versions keep their old localStorage keys (see saveKey in versions.js).
 
 Freezing an OLDER commit that was never snapshotted (retroactively):
     git archive <commit> mockup | tar -x -C <tmpdir>
-    python scripts/snapshot.py 0.4.2 --src <tmpdir>/mockup --save-key crafting.save.v1
+    python scripts/snapshot.py 4.2 --src <tmpdir>/mockup --save-key crafting.save.v1
 
 What it does
   1. checks that APP_VERSION in mockup/app.js (or --src) matches the version you pass
@@ -44,15 +47,15 @@ def write_manifest(entries):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('version', help='x.y.z, must equal APP_VERSION in mockup/app.js')
+    ap.add_argument('version', help='major.minor, must equal APP_VERSION in mockup/app.js')
     ap.add_argument('--notes', default='', help='one line shown in the version menu')
     ap.add_argument('--save-key', help='localStorage key of this version (default crafting.save.<version>)')
     ap.add_argument('--force', action='store_true', help='overwrite an existing snapshot')
     ap.add_argument('--src', help='folder holding index.html/app.js/ship3d.js to freeze (default: mockup/)')
     a = ap.parse_args()
 
-    if not re.fullmatch(r'\d+\.\d+\.\d+', a.version):
-        sys.exit('snapshot: version must look like 1.2.3')
+    if not re.fullmatch(r'\d+\.\d+', a.version):
+        sys.exit('snapshot: version must look like 5.1 (major.minor)')
     src = pathlib.Path(a.src).resolve() if a.src else ROOT
     app = (src / 'app.js').read_bytes()
     m = re.search(rb"const APP_VERSION = '([^']+)'", app)
@@ -81,9 +84,10 @@ def main():
             data = sub_once(data, b"fetch('version.json'", b"fetch('../../version.json'", 'version.json fetch')
         (dest / name).write_bytes(data)
 
+    old = next((e for e in read_manifest() if e['version'] == a.version), {})   # re-freeze: keep its save key
     entries = [e for e in read_manifest() if e['version'] != a.version]
     entries.append({'version': a.version, 'date': datetime.date.today().isoformat(),
-                    'saveKey': a.save_key or f'crafting.save.{a.version}', 'notes': a.notes})
+                    'saveKey': a.save_key or old.get('saveKey') or f'crafting.save.{a.version}', 'notes': a.notes or old.get('notes', '')})
     write_manifest(entries)
     print(f'snapshot: v{a.version} frozen in {dest.relative_to(ROOT.parent)} ({len(entries)} versions in the menu)')
     print(f'next: git tag v{a.version} (after the commit)')

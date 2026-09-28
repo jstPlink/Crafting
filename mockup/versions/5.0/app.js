@@ -28,7 +28,7 @@ const SIZE = {
 const SIZE_ORDER = [1,2,3];   // small sockets first, large at the bottom
 
 // app version: bumped on every commit (the CI build number is shown next to it)
-const APP_VERSION = '0.4.3';
+const APP_VERSION = '5.0';
 
 const KIND = {
   primary:   { cls:'pri', label:'Primary Weapons',   short:'Primary' },
@@ -51,7 +51,11 @@ const RARITY = {
 };
 const rarCol = it => RARITY[it?.lv]?.color || '';
 // rarity is shown by colour only: row tint, icon stripe, or this small swatch
-const rarDot = it => it?.lv ? `<span class="rdot" style="--rc:${rarCol(it)}"></span>` : '';
+const rarSquare = it => it?.lv ? `<span class="rdot" style="--rc:${rarCol(it)}"></span>` : '';
+// "rarityTag" experiment: a filled tag in the rarity colour with the level ("LV5"): the level is
+// readable without relying on colour (earlier tries: 1-7 pips looked like a charge, a gem was colour-only)
+const rarTag = it => it?.lv ? `<span class="rtag" style="--rc:${rarCol(it)}" title="Rarity ${it.lv} / 7">LV${it.lv}</span>` : '';
+const rarDot = it => flag('rarityTag') ? rarTag(it) : rarSquare(it);
 
 // WEAPON params:  ammo type, power consumption, heat generation (primary only),
 //                 ammo magazine size (secondary only: primaries have infinite ammo),
@@ -112,14 +116,15 @@ const ITEM_ORDER = Object.keys(ITEMS);
 const isPylon = id => !!PYLONS[id];
 const outputsOf = P => P.type==='ext' ? [P.size] : [P.size-1, P.size-1];
 
-// BODIES. Params: integrity, shield power, generator power, heatsink power, boost charge, sockets.
+// BODIES. Params: integrity, shield power, generator power, heatsink (heatCap = max heat it holds,
+// heatCool = heat it sheds per second when not firing), boost charge, sockets.
 // Each one defines its sockets (position + outward direction, model space),
 // its power budget, its base stats and a 3D look.
 // Rules: no sockets on the rear of the hull; sockets keep clear of each other in front view.
 // A .glb dropped on the scene becomes a new body built from its sock_p<size>_<n> nodes.
 const BODIES = {
   zephyros: {
-    id:'zephyros', name:'ZEPHYROS', value:1900, tag:'MIXED', integrity:22000, shield:14000, generator:26, heatsink:40, boost:100,
+    id:'zephyros', name:'ZEPHYROS', value:1900, tag:'MIXED', integrity:22000, shield:14000, generator:26, heatCap:400, heatCool:60, boost:100,
     cam:13.6, plat:1,
     look:{ r:[1.5,1.1,2.9], color:0xb98a3e },
     sockets:[
@@ -128,14 +133,12 @@ const BODIES = {
       { id:'b2', size:2, pos:[-1.05, 0.85, 0.1], dir:[-.55, 1, .1] },
       { id:'b3', size:2, pos:[ 1.05, 0.85, 0.1], dir:[ .55, 1, .1] },
       { id:'b4', size:2, pos:[ 0.0, 1.15, 0.2], dir:[0, 1, .1] },
-      { id:'b5', size:1, pos:[-0.4,-0.55, 2.3], dir:[-.3,-.2, 1] },
-      { id:'b6', size:1, pos:[ 0.4,-0.55, 2.3], dir:[ .3,-.2, 1] },
       { id:'b7', size:1, pos:[ 0.0,-1.25, 0.4], dir:[0,-1, .2] },
     ],
   },
   // light scout: four small sockets only
   needle: {
-    id:'needle', name:'NEEDLE', value:800, tag:'LIGHT', integrity:9000, shield:6000, generator:12, heatsink:20, boost:140,
+    id:'needle', name:'NEEDLE', value:800, tag:'LIGHT', integrity:9000, shield:6000, generator:12, heatCap:220, heatCool:45, boost:140,
     cam:8.6, plat:.8,
     look:{ r:[.8,.6,2.6], color:0x8fa6b8 },
     sockets:[
@@ -147,7 +150,7 @@ const BODIES = {
   },
   // heavy hauler: six large sockets
   colossus: {
-    id:'colossus', name:'COLOSSUS', value:4200, tag:'HEAVY', integrity:42000, shield:30000, generator:40, heatsink:60, boost:70,
+    id:'colossus', name:'COLOSSUS', value:4200, tag:'HEAVY', integrity:42000, shield:30000, generator:40, heatCap:700, heatCool:80, boost:70,
     cam:16.5, plat:1.3,
     look:{ r:[2.3,1.7,3.6], color:0x8a4a3a },
     sockets:[
@@ -161,7 +164,7 @@ const BODIES = {
   },
   // mixed gunship: one big dorsal socket, two medium flanks, two small at the nose
   kestrel: {
-    id:'kestrel', name:'KESTREL', value:1500, tag:'MIXED', integrity:15000, shield:12000, generator:20, heatsink:32, boost:110,
+    id:'kestrel', name:'KESTREL', value:1500, tag:'MIXED', integrity:15000, shield:12000, generator:20, heatCap:320, heatCool:55, boost:110,
     cam:13.8, plat:.95,
     look:{ r:[1.3,.9,2.6], color:0x6c8a62 },
     sockets:[
@@ -173,8 +176,46 @@ const BODIES = {
     ],
   },
 };
-const BODY_LIST = ['zephyros','needle','colossus','kestrel'];
-const BODIES_IN_GAME = 12;                                           // main bodies that exist in the game
+/* ---------- integrated modules: every Body has 2 integrated primary weapons + 1 integrated engine ----------
+   They are part of the Body: they cannot be changed, are never in cargo, draw no power and are not counted in
+   the loadout quality; their value is included in the Body base value. They give the base damage, heat, speed
+   and boost use of the ship.
+   Each hull comes in 3 variants that differ in weapons AND rarity of the integrated parts (stats follow the level,
+   so a rare variant of a weak hull can beat the poor variant of the next hull — a "second life" for weak hulls):
+     RUSTED  level = tier      2 gatlings
+     RANGER  level = tier + 1  laser + gatling   (keeps the plain hull id, so older saves land here)
+     ELITE   level = tier + 3  2 lasers                                                             */
+const BODY_TIER = { needle:1, kestrel:2, zephyros:3, colossus:4 };
+// where the integrated parts sit on each hull (weapons at the nose, engine at the back)
+const INTEG_POS = {
+  zephyros: { w:[[-0.4,-0.55,2.3],[0.4,-0.55,2.3]], e:[0,0.1,-3.0], size:2 },
+  needle:   { w:[[-0.32,-0.25,2.2],[0.32,-0.25,2.2]], e:[0,0.05,-2.65], size:1 },
+  colossus: { w:[[-0.8,-0.6,3.25],[0.8,-0.6,3.25]], e:[0,0.15,-3.7], size:3 },
+  kestrel:  { w:[[-0.75,0.3,1.75],[0.75,0.3,1.75]], e:[0,0.1,-2.7], size:2 },
+};
+// integrated weapon / engine stats by level L (1..7)
+const INTEG_GUN = {
+  laser:   L => ({ name:`Keel Laser Mk${L}`,   o:{ power:0, heat:2+2*L, dmg:16+11*L, rate:1.8,        acc:Math.min(98, 84+2*L) } }),
+  gatling: L => ({ name:`Keel Gatling Mk${L}`, o:{ power:0, heat:1+2*L, dmg:3+2*L,   rate:7+L*.5,     acc:58+2*L } }),
+};
+const INTEG_VARIANTS = [
+  { name:'RUSTED', suffix:'_rs', dLv:0, guns:['gatling','gatling'] },
+  { name:'RANGER', suffix:'',    dLv:1, guns:['laser','gatling'] },
+  { name:'ELITE',  suffix:'_el', dLv:3, guns:['laser','laser'] },
+];
+for(const base of Object.keys(BODY_TIER)){
+  const b = BODIES[base], t = BODY_TIER[base], P = INTEG_POS[base];
+  for(const v of INTEG_VARIANTS){
+    const id = base + v.suffix, L = Math.min(7, t + v.dLv);
+    const guns = v.guns.map((fam,i) => { const g = INTEG_GUN[fam](L); return W(`${id}_g${i}`, g.name, 'primary', fam, P.size, L, g.o); });
+    const engine = E(`${id}_core`, `Core Drive Mk${L}`, P.size, L, { power:0, speed:16+11*L, boostUse:Math.round(3+.6*L) });
+    const integrated = [{ key:'w1', mod:guns[0], pos:P.w[0] }, { key:'w2', mod:guns[1], pos:P.w[1] }, { key:'eng', mod:engine, pos:P.e }];
+    BODIES[id] = { ...b, id, name:`${b.name} ${v.name}`, hull:b.name, variant:v.name, integLv:L, integrated,
+                   value: b.value + integrated.reduce((a,g) => a + g.mod.value, 0) };   // integrated worth is in the base value
+  }
+}
+const BODY_LIST = Object.keys(BODY_TIER).flatMap(base => INTEG_VARIANTS.map(v => base + v.suffix));   // re-ordered by quality in boot()
+const BODIES_IN_GAME = 20;                                           // main bodies that exist in the game
 const unlockedBodies = () => BODY_LIST.filter(id => BODIES[id].tag!=='CUSTOM').length;
 let BODY = BODIES.zephyros;
 const M = id => ({ t:'mod', id }), P = id => ({ t:'pyl', id });
@@ -183,23 +224,30 @@ const M = id => ({ t:'mod', id }), P = id => ({ t:'pyl', id });
 const CARGO_SLOTS = 25, STACK = 14;
 const cargoSlots = C => Object.keys(MODS).reduce((a,id) => a + Math.ceil((C[id]||0)/STACK), 0);
 
-const S = {
-  // socket id -> attachment. child sockets are '<parent>.<i>'
-  att: {
+// starting build of each Body (target of "Reset build"); Bodies not listed start empty
+const DEFAULT_ATT = {
+  zephyros: {
     b0:P('split3'), 'b0.0':M('gatWarden'), 'b0.1':M('gatWarden'),
     b1:P('ext3'),
     b2:M('engSpeeder'), b3:M('engSpeeder'),
     b4:P('split2'), 'b4.0':M('lasSpark'),
-    b5:M('rktDart'),
   },
+};
+
+const S = {
+  // socket id -> attachment. child sockets are '<parent>.<i>'
+  att: { ...DEFAULT_ATT.zephyros },
+  hist: {},              // "undoRedo" experiment: per Body { u:[{att,label}], r:[...] } — session only, not saved
+  intro: false,          // "intro" experiment: first-time guide open
   builds: {},            // saved loadout of every body that is not the active one
   // modules only (arms are unlimited). A full stack of every module, counting the ones mounted above
-  cargo: Object.fromEntries(Object.keys(MODS).map(id => [id, STACK - ({ gatWarden:2, engSpeeder:2, lasSpark:1, rktDart:1 }[id]||0)])),
+  cargo: Object.fromEntries(Object.keys(MODS).map(id => [id, STACK - ({ gatWarden:2, engSpeeder:2, lasSpark:1 }[id]||0)])),
   sel: 'b0',
   tab: 'primary',
   focus: 'slots',        // 'slots' | 'cargo' | 'body'
   picker: false, pickIdx: 0,
   cargoIdx: 0,
+  listMode: 'tree',      // left list view: 'tree' | 'fill' | 'type' | 'rarity' | 'power' (experiment listModes)
   sort: 'stat',          // cargo ordering: 'stat' | 'rarity' | 'power' (experiment keyStats)
   hoverCargo: null, hoverSlot: null, hoverRemove: null,
   inputPref: 'gamepad',  // 'gamepad' | 'keyboard' | 'auto'
@@ -208,27 +256,52 @@ const S = {
   scale: 1,
   rot: { yaw:.75, pitch:.34, d:13.2 },
 };
-const homeRot = () => ({ yaw:.75, pitch:.34, d:BODY.cam });
+const homeRot = () => ({ yaw:.75, pitch:.34, d:BODY.cam*1.3 });   // zoomed out: arms and modules stay in frame
 
 /* ---------- experiments: features switchable from the version menu (switcher.js) ----------
-   Each flag guards ONE UX change of 0.4.3, so it can be compared with the old behaviour.
+   Each flag guards ONE UX change, so it can be compared with the old behaviour.
    State is kept per version in localStorage. */
+// promoted to standard behaviour: no longer switchable, always on
+const ALWAYS_ON = { bigText:true, overview:true, slideCargo:true };
+// switches phrased as "Hide …": the underlying feature is the opposite of the switch
+const HIDDEN_BY = { undoRedo:'hideUndo', shipQuality:'hideQuality' };
+// `since` = version that added the feature (shown next to it in the features window of the version menu)
 const FLAGS = {
-  bigText:  { label:'Readable text',    desc:'Larger type and higher contrast on dim text',                         on:true },
-  keyStats: { label:'Key stat on rows', desc:'DPS / speed on every part, delta vs mounted, BEST tag, cargo sorting', on:true },
-  overview: { label:'Clearer overview', desc:'Power shown once, free-socket summary, empty slots named',            on:true },
+  keyStats:     { since:'4.3', label:'Key stat on rows', desc:'DPS / speed on every part, delta vs mounted, BEST tag, cargo sorting', on:true },
+  typeShape:    { since:'5.0', label:'Type by row shape', desc:'No type colour on icons: the left end of a module row is pointed (primary), round (secondary) or notched (engine)', on:true },
+  rarityTag:    { since:'5.0', label:'Rarity tag',       desc:'Rarity as a coloured LV1-LV7 tag before the name; neutral rows, tint kept for selection', on:true },
+  rarityFade:   { since:'5.0', label:'Rarity fade',      desc:'Rarity colour fading from under the name to the right, leaving the stats readable', on:true },
+  blockedReason:{ since:'5.0', label:'Why it won\'t fit', desc:'NO POWER (+n over) / CARGO FULL always shown on rows that cannot be mounted', on:true },
+  hideUndo:     { since:'5.0', label:'Hide undo / redo', desc:'Hides undo / redo (L3 / R3, Ctrl+Z / Ctrl+Y) and Reset build on the Body row (X). Turn off to use them', on:true },
+  intro:        { since:'5.0', label:'First-time guide', desc:'Short how-it-works screen on first open; reopen from GUIDE in the bottom bar (short press Start, or H)', on:true },
+  socketLabels: { since:'5.0', label:'3D socket labels', desc:'Every mounted part and free socket is labelled in the 3D view, linked to the list on hover / click', on:true },
+  compactCard:  { since:'5.0', label:'Compact info card', desc:'Narrower info card anchored at the bottom, stats in two columns with short labels', on:true },
+  bodyButton:   { since:'5.0', label:'Body switcher',    desc:'Body header is a plain title; a ‹ NAME › row switches between unlocked Bodies (no picker window)', on:true },
+  stackBadge:   { since:'5.0', label:'Stack count on icon', desc:'Cargo quantity shown as a small count on the icon corner, not among the stats', on:true },
+  maxRatings:   { since:'5.0', label:'Rated vs max',     desc:'Primary / secondary DPS, ship value and max speed coloured by how close they are to the best build in the game', on:true },
+  hideQuality:  { since:'5.0', label:'Hide loadout quality', desc:'Hides the LOADOUT QUALITY block (average LV + one rarity tile per mounted module). Turn off to show it', on:true },
+  listModes:    { since:'5.0', label:'Socket list views', desc:'Left list as tree, filled / empty, by type, by rarity or by power (tabs, or X tap like the cargo); hold X to unequip', on:true },
 };
-const FLAGS_KEY = 'crafting.flags.' + APP_VERSION;
-const flag = id => FLAGS[id].on;
+// saves and switches are stored under the version key; 5.0 was published as 0.5.0 and keeps that key
+const STORE_VER = { '5.0':'0.5.0' }[APP_VERSION] || APP_VERSION;
+const FLAGS_KEY = 'crafting.flags.' + STORE_VER;
+const flag = id => ALWAYS_ON[id] || (HIDDEN_BY[id] ? !FLAGS[HIDDEN_BY[id]].on : FLAGS[id].on);
 function loadFlags(){
   try{ const d = JSON.parse(localStorage.getItem(FLAGS_KEY)); for(const id in FLAGS) if(typeof d?.[id]==='boolean') FLAGS[id].on = d[id]; }catch(e){}
 }
 function applyFlags(){
   $('#stage').classList.toggle('ux-big', flag('bigText'));
   $('#stage').classList.toggle('ux-ov', flag('overview'));
+  $('#stage').classList.toggle('ux-rar', flag('rarityTag'));
+  $('#stage').classList.toggle('ux-card', flag('compactCard'));
+  $('#stage').classList.toggle('ux-tshape', flag('typeShape'));
+  $('#stage').classList.toggle('ux-slide', flag('slideCargo'));
+  $('#stage').classList.toggle('ux-rfade', flag('rarityFade'));
+  window.resizeShip?.();                                  // layout flags change the 3D view size
+  $('#stage').classList.toggle('ux-block', flag('blockedReason'));
 }
 window.craftingExperiments = {
-  items: () => Object.entries(FLAGS).map(([id,f]) => ({ id, label:f.label, desc:f.desc, on:f.on })),
+  items: () => Object.entries(FLAGS).map(([id,f]) => ({ id, label:f.label, desc:f.desc, on:f.on, since:f.since })),
   toggle(id){
     const f = FLAGS[id]; if(!f) return;
     f.on = !f.on;
@@ -264,6 +337,8 @@ const I = {
   pylon:     '<path d="M8 15V7M8 7L3 2M8 7l5-5" stroke="currentColor" stroke-width="2" fill="none"/><circle cx="8" cy="7" r="1.8" fill="currentColor"/>',
   sockets:   '<path d="M8 2l5 9H3zM2 14h5M9 14h5" stroke="currentColor" stroke-width="1.5" fill="none"/>',
   x:     '<path d="M3 3l10 10M13 3L3 13" stroke="currentColor" stroke-width="2.4" fill="none"/>',
+  lock:  '<rect x="3" y="7" width="10" height="8" rx="1"/><path d="M5 7V5a3 3 0 0 1 6 0v2" stroke="currentColor" stroke-width="1.8" fill="none"/>',
+  swap:  '<path d="M2 5.5h11M10 2.5l3 3-3 3M14 10.5H3M6 7.5l-3 3 3 3" stroke="currentColor" stroke-width="1.8" fill="none"/>',
   // module families
   gatling: '<rect x="1" y="4.5" width="4.5" height="7" rx="1"/><path d="M5.5 5.5h9M5.5 8h9M5.5 10.5h9" stroke="currentColor" stroke-width="1.5"/><path d="M14.5 4.5v7" stroke="currentColor" stroke-width="1.2"/>',
   laser:   '<path d="M1 5h5l2.5 3L6 11H1z"/><path d="M8.5 8H15" stroke="currentColor" stroke-width="2.2"/><path d="M11 5l1.2 1.4M11 11l1.2-1.4M14 4.5l-.8 1.5M14 11.5l-.8-1.5" stroke="currentColor" stroke-width="1.1"/>',
@@ -305,6 +380,7 @@ const STAT_META = {
   // ship totals
   priDps:   { label:'Primary DPS',              icon:'dps',    better:'high' },
   secDps:   { label:'Secondary DPS',            icon:'dps',    better:'high' },
+  fireTime: { label:'Fire Time',                icon:'heat',   better:'high', unit:'s', dec:1 },
   maxSpeed: { label:'Max Speed',                icon:'speed',  better:'high', unit:' m/s' },
   boostTime:{ label:'Boost Duration',           icon:'boost',  better:'high', unit:'s', dec:1 },
 };
@@ -372,9 +448,9 @@ function spawn(sock, p){
 }
 
 // flatten body sockets + everything the pylons expose (depth-first)
-function layout(att){
+function layout(att, body = BODY){
   const list = [], byId = {}, count = {1:0,2:0,3:0};
-  const roots = BODY.sockets.map(b => { count[b.size]++; return { id:b.id, size:b.size, pos:b.pos, dir:b.dir, depth:0, parent:null, idx:count[b.size] }; });
+  const roots = body.sockets.map(b => { count[b.size]++; return { id:b.id, size:b.size, pos:b.pos, dir:b.dir, depth:0, parent:null, idx:count[b.size] }; });
   const placed = [...roots];
   const add = s => {
     list.push(s); byId[s.id] = s;
@@ -397,17 +473,43 @@ function layout(att){
 const inTree = (id, root) => id===root || id.startsWith(root+'.');
 const sockName = s => `${SIZE[s.size].label} socket`;
 
-// display order of the left panel: sections P3, P2, P1 (body sockets), each with its subtree
-function navOrder(L){
-  const out = [];
-  for(const n of SIZE_ORDER) for(const r of L.list.filter(s=>!s.parent && s.size===n)) L.list.forEach(s => { if(inTree(s.id,r.id)) out.push(s.id); });
-  return out;
+// display groups of the left panel. 'tree' = sections by Body socket size, each with its subtree.
+// The other views ("listModes" experiment) are flat lists regrouped by what is mounted.
+const LIST_MODES = ['tree','fill','type','rarity','power'];
+const LIST_LABEL = { tree:'TREE', fill:'FILLED', type:'TYPE', rarity:'RARITY', power:'POWER' };
+function listGroups(L, att = S.att){
+  const tree = [];
+  for(const n of SIZE_ORDER){
+    const roots = L.list.filter(s => !s.parent && s.size===n);
+    if(roots.length) tree.push({ key:'P'+n, title:`${sg(n,16)}${SIZE[n].label} · ${SIZE[n].name.toUpperCase()} SOCKETS`, rows:L.list.filter(s => roots.some(r => inTree(s.id,r.id))), tree:true });
+  }
+  const mode = flag('listModes') ? S.listMode : 'tree';
+  if(mode==='tree') return tree;
+  const order = tree.flatMap(g => g.rows);                          // tree order = tie-break everywhere
+  const itOf = s => att[s.id] ? ITEM(att[s.id].id) : null;
+  const mods = order.filter(s => att[s.id]?.t==='mod'), arms = order.filter(s => att[s.id]?.t==='pyl'), empty = order.filter(s => !att[s.id]);
+  const tail = [{ key:'empty', title:`${sg(1,14,'dash')}EMPTY SOCKETS`, rows:empty }];   // arms only appear in the tree view
+  let groups;
+  if(mode==='fill') groups = [{ key:'full', title:'MOUNTED', rows:mods }, { key:'empty', title:'EMPTY SOCKETS', rows:empty }];
+  else if(mode==='type') groups = [['primary','PRIMARY WEAPONS'],['secondary','SECONDARY WEAPONS'],['engine','ENGINES']]
+      .map(([k,t]) => ({ key:k, title:`${ico(k)}${t}`, rows:mods.filter(s => itOf(s).kind===k) })).concat(tail);
+  else if(mode==='rarity') groups = [7,6,5,4,3,2,1].map(lv => ({ key:'lv'+lv, title:`${rarTag({ lv })}RARITY`, rows:mods.filter(s => itOf(s).lv===lv) })).concat(tail);
+  else groups = [{ key:'pow', title:`${ico('power')}POWER USE`, right:`${mods.reduce((a,s) => a+itOf(s).power, 0)} / ${BODY.generator}`,
+      rows:[...mods].sort((a,b) => itOf(b).power - itOf(a).power) }].concat(tail);
+  return groups.filter(g => g.rows.length).map(g => ({ ...g, right: g.right ?? String(g.rows.length) }));
+}
+// navigation order of the left panel = display order
+const navOrder = L => listGroups(L).flatMap(g => g.rows.map(s => s.id));
+function cycleListMode(dir){
+  if(!flag('listModes')) return;
+  S.listMode = LIST_MODES[(LIST_MODES.indexOf(S.listMode)+dir+LIST_MODES.length) % LIST_MODES.length];
+  renderAll(); $('.slot.sel')?.scrollIntoView({ block:'nearest' });
 }
 
 /* ---------- loadout maths ---------- */
 function calc(att){
   const L = layout(att);
-  const t = { power:0, heat:0, speed:0, boostUse:0, priDps:0, secDps:0, value:BODY.value||0,
+  const t = { power:0, heat:0, speed:0, boostUse:0, priDps:0, secDps:0, value:BODY.value||0, lvs:[], mq:[],
               sock:{1:{free:0,total:0},2:{free:0,total:0},3:{free:0,total:0}} };
   for(const s of L.list){
     t.sock[s.size].total++;
@@ -416,10 +518,22 @@ function calc(att){
     if(a.t!=='mod') continue;
     const it = ITEM(a.id);
     t.power += it.power; t.value += it.value; t.heat += mv(it,'heat'); t.speed += mv(it,'speed'); t.boostUse += mv(it,'boostUse');
+    t.lvs.push(it.lv); t.mq.push({ lv:it.lv, size:it.size });
     if(it.kind==='primary') t.priDps += it.dps;
     if(it.kind==='secondary') t.secDps += it.dps;
   }
-  t.maxSpeed = t.speed;                                        // Body has no base speed: engines add it all
+  for(const g of BODY.integrated||[]){                      // integrated: no power, not in the loadout quality
+    const m = g.mod;
+    t.heat += mv(m,'heat'); t.speed += mv(m,'speed'); t.boostUse += mv(m,'boostUse');
+    if(m.kind==='primary') t.priDps += m.dps;
+    if(m.kind==='secondary') t.secDps += m.dps;
+  }
+  // heat is progressive: firing always ends in overheat, the build decides how soon.
+  // fireTime = seconds of sustained fire of all primaries from cold; coolTime = seconds to shed a full heatsink
+  t.fireTime = t.heat ? BODY.heatCap / t.heat : Infinity;
+  t.coolTime = BODY.heatCap / BODY.heatCool;
+  t.gear = t.lvs.length ? t.lvs.reduce((a,v) => a+v, 0) / t.lvs.length : 0;   // average rarity of mounted modules
+  t.maxSpeed = t.speed;                                        // base speed comes from the integrated engine
   t.boostTime = t.boostUse ? BODY.boost / t.boostUse : 0;     // seconds of boost from a full charge
   return t;
 }
@@ -451,11 +565,16 @@ const SORT_FN = {
 const SORT_ORDER = ['stat','rarity','power'];
 const sortLabel = () => S.sort==='stat' ? (S.tab==='engine' ? 'SPEED' : 'DPS') + ' ↓' : S.sort==='rarity' ? 'RARITY ↓' : 'POWER ↑';
 function cargoItems(size = selSock().size, tab = S.tab){
+  if(holdsParts(S.sel)) return [];                       // locked arm: see holdsParts
   const list = ITEM_ORDER.filter(id => (isPylon(id) || (S.cargo[id]||0)>0) && ITEMS[id].size===size && canMount(id, selSock()) &&
     (tab==='pylon' ? isPylon(id) : (!isPylon(id) && ITEMS[id].kind===tab))).map(id => ITEMS[id]);
   return flag('keyStats') && tab!=='pylon' ? list.sort(SORT_FN[S.sort]) : list;
 }
 const cargoList = () => cargoItems();
+// Only END parts can be changed: an arm that still holds parts on its outputs is locked
+// (no replace, no unequip) until those parts are removed. "Remove all" still clears everything.
+const holdsParts = sid => Object.keys(S.att).some(k => k.startsWith(sid+'.'));
+const partsOn = sid => Object.keys(S.att).filter(k => k.startsWith(sid+'.')).length;
 function ensureTab(){
   if(cargoItems().length) return;
   const t = TAB_ORDER.find(k => cargoItems(selSock().size, k).length);
@@ -491,9 +610,14 @@ function glyph(n){
       case 'VIEW': return '<i class="gp pill">⧉</i>';
       case 'LS': return '<i class="gp rs">L</i>';
       case 'SORT': return '<i class="gp x">X</i>';
+      case 'L3': return '<i class="gp rs">L3</i>';
+      case 'DL': return '<i class="gp pill">◀</i>';
+      case 'GUIDE': return '<i class="gp pill">≡</i>';
+      case 'DR': return '<i class="gp pill">▶</i>';
+      case 'R3': return '<i class="gp rs">R3</i>';
     }
   }else{
-    const k = { A:'Enter', B:'Bksp', X:'Del', Y:'R', dpad:'↑ ↓', LT:'⇧ Tab', RT:'Tab', LB:'Q', RB:'E', RS:'Drag', START:'Esc', VIEW:'V', LS:'R-Drag', SORT:'O' }[n];
+    const k = { A:'Enter', B:'Bksp', X:'Del', Y:'R', dpad:'↑ ↓', LT:'⇧ Tab', RT:'Tab', LB:'Q', RB:'E', RS:'Drag', START:'Esc', VIEW:'V', LS:'R-Drag', SORT:'O', L3:'^Z', R3:'^Y', DL:'←', DR:'→', GUIDE:'H' }[n];
     return `<i class="key">${k}</i>`;
   }
 }
@@ -522,24 +646,42 @@ function renderTop(){
     <div class="credits">121,834 CR</div>`;
 }
 
-function leftRow(s, up=1){
+// short name (family dropped: it is already on the icon) — used by the 3D labels; the left list shows full names
+// ("Mote S. Matter Shooter" -> "Mote"); arms keep only their kind (outputs are shown as glyphs)
+const shortName = it => isPylon(it.id) ? (it.type==='ext' ? 'Extension Arm' : 'Split Arm')
+  : it.name.endsWith(' '+FAMILY[it.fam].label) ? it.name.slice(0, -FAMILY[it.fam].label.length-1) : it.name;
+
+function leftRow(s, up=1, statKey=null){
   const a = S.att[s.id], it = a ? ITEM(a.id) : null, isSel = S.sel===s.id;
   const kcls = !it ? 'free' : a.t==='pyl' ? 'pyl' : KIND[it.kind].cls;
   const cls = ['slot', kcls, isSel?'sel':'', isSel&&S.focus==='slots'?'focus':'', S.hoverSlot===s.id?'hov':'', S.flash===s.id?'flash':'',
                s.depth?'child':'',
                PV&&PV.sid===s.id ? (PV.to?'pv-add':'pv-rem') : ''].join(' ');
   const icon = !it ? sg(s.size,20,'dash') : ico(a.t==='pyl' ? 'pylon' : it.fam);
-  const name = it ? it.name : flag('overview') ? 'Empty' : '';
+  const full = it ? it.name : flag('overview') ? 'Empty' : '';
+  const name = full;
   const right = it && a.t==='pyl' ? outGlyphs(it) : '';
   const rc = it && a.t==='mod' ? rarCol(it) : '';
-  const k = it && a.t==='mod' && flag('keyStats') ? KEYSTAT[it.kind] : null;
+  const k = it && a.t==='mod' && (statKey || flag('keyStats')) ? (statKey || KEYSTAT[it.kind]) : null;
   const ks = k ? `<span class="ks" title="${STAT_META[k].label}: ${fmtStat(k,it[k])}">${ico(STAT_META[k].icon)}${it[k]}</span>` : '';
   return `<div class="${cls}${rc?' rar':''}" data-slot="${s.id}" style="--d:${s.depth};--up:${up}${rc?`;--rc:${rc}`:''}">
     <div class="ic">${icon}</div>
-    <div class="nm" title="${name}">${name}</div>
+    <div class="nm" title="${full}">${rc && flag('rarityTag') ? rarTag(it) : ''}<span class="nmx"><span class="nmt">${name}</span></span></div>
     ${ks}${it && a.t==='mod' && !k ? sg(s.size,12) : ''}${right}
     ${isSel?`<span class="kh" style="${S.focus==='slots'?'':'visibility:hidden'}">${glyph('A')}</span>`:''}
-    ${it?`<button class="unq" data-unq="${s.id}" title="Unequip">${ico('x')}</button>`:''}
+    ${it && holdsParts(s.id) ? `<span class="lockq" title="Holds ${partsOn(s.id)} part${partsOn(s.id)>1?'s':''}: only end parts can be changed, remove them first">${ico('lock')}</span>`
+      : it ? `<button class="unq" data-unq="${s.id}" title="Unequip">${ico('x')}</button>` : ''}
+  </div>`;
+}
+
+// integrated module row: same look as a mounted module, but locked and not part of the navigation
+function integRow(m){
+  const k = KEYSTAT[m.kind];
+  return `<div class="slot ${KIND[m.kind].cls} rar integ" style="--d:0;--rc:${rarCol(m)}" title="${m.name} · integrated in the Body: cannot be changed">
+    <div class="ic">${ico(m.fam)}</div>
+    <div class="nm">${flag('rarityTag') ? rarTag(m) : ''}<span class="nmx"><span class="nmt">${m.name}</span></span></div>
+    <span class="ks">${ico(STAT_META[k].icon)}${m[k]}</span>
+    <span class="lockq">${ico('lock')}</span>
   </div>`;
 }
 
@@ -550,24 +692,40 @@ function renderLeft(){
   // "overview" experiment: power is shown once, in the overview, not repeated here
   const hdrPower = flag('overview') ? '' : `<div class="pw"><svg viewBox="0 0 16 16" fill="currentColor">${I.power}</svg><span class="n ${pcls}">${pt.power}</span><span>/ ${BODY.generator}</span></div>`;
   let html = `
-    <div class="lp-head bodysel ${S.focus==='body'?'focus':''}">
-      <div class="ic"><svg width="30" height="30" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3 7 7 3-7 3-3 7-3-7-7-3 7-3z"/></svg></div>
-      <div class="nm"><button class="bsb" data-bstep="-1" title="Previous Body">‹</button><span class="bname" data-bpick title="${BODY.name}">${BODY.name}</span><button class="bsb" data-bstep="1" title="Next Body">›</button></div>
+    <div class="lp-head bodysel ${S.focus==='body' && !flag('bodyButton')?'focus':''}">
+      ${flag('bodyButton') ? '' : `<div class="ic"><svg width="30" height="30" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3 7 7 3-7 3-3 7-3-7-7-3 7-3z"/></svg></div>`}   <!-- plain title: no icon -->
+      ${flag('bodyButton')   // "bodyButton" experiment: the orange plate is a title like the other panel headers, not a control
+        ? `<div class="nm">BODY</div>`
+        : `<div class="nm"><button class="bsb" data-bstep="-1" title="Previous Body">‹</button><span class="bname" data-bpick title="${BODY.name}">${BODY.name}</span><button class="bsb" data-bstep="1" title="Next Body">›</button></div>`}
       <div class="bunl" title="Bodies unlocked / Bodies in the game"><small>UNLOCKED</small>${unlockedBodies()}/${BODIES_IN_GAME}</div>
       ${hdrPower}
     </div>
+    ${flag('bodyButton') ? `<div class="bodysw ${S.focus==='body'?'focus':''}">
+      <button class="bsw" data-bstep="-1" title="Previous Body">${S.focus==='body' ? glyph('DL') : '‹'}</button>
+      <div class="bsw-mid"><span class="bname"><span class="bn-t">${BODY.name}</span></span><small>${BODY_LIST.indexOf(BODY.id)+1} / ${BODY_LIST.length} UNLOCKED</small></div>
+      <button class="bsw" data-bstep="1" title="Next Body">${S.focus==='body' ? glyph('DR') : '›'}</button>
+    </div>` : ''}
+    ${flag('listModes') ? `<div class="lmodes">${LIST_MODES.map(m => `<button class="lm ${m===S.listMode?'act':''}" data-lmode="${m}">${LIST_LABEL[m]}</button>`).join('')}${S.focus==='slots' ? glyph('X') : ''}</div>` : ''}
     <div class="lp-body">`;
-  for(const n of SIZE_ORDER){
-    const roots = LY.list.filter(s=>!s.parent && s.size===n);
-    if(!roots.length) continue;
-    html += `<div class="sec-title"><span class="st-l">${sg(n,16)}${SIZE[n].label} · ${SIZE[n].name.toUpperCase()} SOCKETS</span></div>`;
-    // rows between a child and its pylon: the tree line runs all the way up to the pylon row
-    const rows = LY.list.filter(s => roots.some(r => inTree(s.id,r.id)));
-    const at = Object.fromEntries(rows.map((s,i) => [s.id,i]));
-    for(const s of rows) html += leftRow(s, s.parent ? at[s.id]-at[s.parent] : 1);
+  if(BODY.integrated?.length){
+    html += `<div class="sec-title"><span class="st-l">${ico('lock')}INTEGRATED</span><span>FIXED</span></div>`;
+    for(const g of BODY.integrated) html += integRow(g.mod);
+  }
+  for(const g of listGroups(LY)){
+    html += `<div class="sec-title"><span class="st-l">${g.title}</span>${g.tree ? '' : `<span>${g.right}</span>`}</div>`;
+    if(g.tree){
+      // rows between a child and its pylon: the tree line runs all the way up to the pylon row
+      const at = Object.fromEntries(g.rows.map((s,i) => [s.id,i]));
+      for(const s of g.rows) html += leftRow(s, s.parent ? at[s.id]-at[s.parent] : 1);
+    }else for(const s of g.rows) html += leftRow({ ...s, depth:0 }, 1, S.listMode==='power' ? 'power' : null);   // flat views: no indentation
   }
   html += `</div>`;
   $('#left').innerHTML = html;
+  // names are never cut: a Body name (up to 16 characters) or a module name that does not fit scrolls back and forth
+  for(const box of document.querySelectorAll('#left .bsw-mid .bname, #left .slot .nmx')){
+    const txt = box.firstElementChild, over = txt ? txt.scrollWidth - box.clientWidth : 0;
+    box.classList.toggle('scroll', over > 0); box.style.setProperty('--over', Math.max(0, over) + 'px');
+  }
   const b = $('#left .lp-body'); if(b) b.scrollTop = keep;
 }
 
@@ -575,9 +733,9 @@ function skCell(n, t, nn){
   const d = nn.sock[n].free - t.sock[n].free;
   return `<div class="wc sk">${sg(n,20)}<span class="v">${nn.sock[n].free}<i>/${nn.sock[n].total}</i></span>${d?`<span class="d ${d>0?'up':'nt'}">${sgn(d)}</span>`:''}</div>`;
 }
-function statCell(icon,label,val,delta,k){
+function statCell(icon,label,val,delta,k,rated=null){
   const c = dcls(k,delta), v = k==='boostTime' && !val ? '—' : fmtStat(k,val).replace(/\s?([a-z/%]+)$/i, '<small>$1</small>');
-  return `<div class="st"><div class="si">${ico(icon)}</div><div><div class="sl">${label}</div><div class="sv ${delta?c:''}">${v}</div></div><div class="sd ${c} ${delta?'':'off'}">${delta?sgnStat(k,delta):''}</div></div>`;
+  return `<div class="st ${rated?'rated-bg':''}" ${rated?rated.attrs:''}><div class="si">${ico(icon)}</div><div><div class="sl">${label}</div><div class="sv ${delta?c:''}">${v}</div></div><div class="sd ${c} ${delta?'':'off'}">${delta?sgnStat(k,delta):''}</div></div>`;
 }
 function wcell(cls,icon,val,delta,tip=''){
   const c = delta ? (delta>0?'up':'dn') : '';
@@ -598,52 +756,57 @@ function renderRight(){
     bar += `<i class="${c}"></i>`;
   }
   const pd = n.power - t.power;
-  // heat load: heat generated by primaries per second vs heat the heatsink removes per second
-  const load = v => Math.round(v/BODY.heatsink*100);
-  const hot = n.heat > BODY.heatsink, hd = load(n.heat) - load(t.heat);
-  const hpct = v => Math.min(100, v/BODY.heatsink*100);
-  const hlo = Math.min(t.heat,n.heat), hhi = Math.max(t.heat,n.heat);
-  const heatTip = `<span class="tip">?<span class="tipbox"><b>HEAT LOAD</b>
-      Primary weapons build up heat while firing; the Body heatsink removes it.<br>
-      <b class="ok">Up to 100%</b> the heatsink keeps up: you can fire forever.<br>
-      <b class="no">Over 100%</b> heat builds up while firing: pause to cool down or the weapons overheat.
-      <span class="tipnum">Primaries generate <b>${n.heat}</b> heat/s · heatsink removes <b>${BODY.heatsink}</b> heat/s</span></span></span>`;
+  // heat: firing always ends in overheat; what matters is how long you can fire and how long you then wait
+  const secs = v => !isFinite(v) ? '∞' : v >= 100 ? Math.round(v)+'s' : v.toFixed(1)+'s';
+  const uptime = x => isFinite(x.fireTime) ? x.fireTime / (x.fireTime + x.coolTime) : 1;   // share of a fire/cool cycle spent firing
+  const fd = isFinite(n.fireTime) && isFinite(t.fireTime) ? n.fireTime - t.fireTime : (n.fireTime===t.fireTime ? 0 : NaN);
+  const fdTxt = !fd ? '' : isNaN(fd) ? (isFinite(n.fireTime) ? '−∞' : '+∞') : (fd>0?'+':'−') + Math.abs(fd).toFixed(1) + 's';
+  const fdCls = isNaN(fd) ? (isFinite(n.fireTime) ? 'dn' : 'up') : fd>0 ? 'up' : 'dn';
+  const heatTip = `<span class="tip">?<span class="tipbox"><b>HEAT</b>
+      Primary weapons heat up while firing and <b class="no">always overheat</b> in the end: the build decides how soon.<br>
+      <b class="ok">Fire time</b>: seconds all primaries can fire from cold before overheating (heatsink capacity ÷ heat per second).<br>
+      <b class="ok">Cooldown</b>: seconds the heatsink needs to shed a full load.
+      <span class="tipnum">Primaries <b>${n.heat}</b> heat/s · heatsink holds <b>${BODY.heatCap}</b> · cools <b>${BODY.heatCool}</b>/s</span></span></span>`;
 
   // "overview" experiment: ship value and free sockets per size (before / after the previewed change) share one row
   const valDelta = n.value!==t.value ? `<span class="sd nt">${sgn(n.value-t.value)}</span>` : '';
+  // ship value and loadout quality are one block ("overview" experiment); free sockets are no longer listed
   const valRow = flag('overview')
-    ? `<div class="valrow sum"><div class="vcol"><div class="rl">SHIP VALUE</div><div class="val">${ico('value')}<b>${fmt(n.value)}</b><div class="dslot">${valDelta}</div></div></div>
-        <div class="vcol"><div class="rl">FREE SOCKETS</div><div class="sks">${SIZE_ORDER.filter(s => n.sock[s].total || t.sock[s].total).map(s => {
-          const d = n.sock[s].free - t.sock[s].free;
-          return `<div class="sk">${sg(s,18)}<b>${n.sock[s].free}</b><i>/${n.sock[s].total}</i>${d?`<span class="d ${d>0?'up':'nt'}">${sgn(d)}</span>`:''}</div>`;
-        }).join('')}</div></div></div>`
-    : `<div class="valrow"><div class="rl">SHIP VALUE</div><div class="val">${ico('value')}<b>${fmt(n.value)}</b><div class="dslot">${valDelta}</div></div></div>`;
+    ? `<div class="valrow sum grp"><div class="vcol ${flag('maxRatings')?'rated-bg':''}" ${flag('maxRatings') ? rate(n.value, gameMax('value')).attrs : ''}><div class="rl">SHIP VALUE</div><div class="val"><b>${fmt(n.value)}</b><div class="dslot">${valDelta}</div></div></div>
+        ${flag('shipQuality') ? qualityRow(t, n) : ''}</div>`
+    : `<div class="valrow"><div class="rl">SHIP VALUE</div><div class="val"><b>${fmt(n.value)}</b><div class="dslot">${valDelta}</div></div></div>`;
 
   const ov = `<div class="ov">
     <div class="head">SPACESHIP OVERVIEW<small>${PV?'PREVIEW':''}</small></div>
     <div class="ov-body">
       ${valRow}
+      ${!flag('overview') && flag('shipQuality') ? qualityRow(t, n) : ''}
       <div class="pw-row">
         <div class="lbl">POWER<b class="${over?'bad':''}">${n.power} / ${BODY.generator}</b></div>
         <div class="pbar">${bar}</div>
         <div class="dslot">${pd?`<span class="sd ${over?'dn':dcls('power',pd)}">${sgn(pd)}</span>`:''}</div>
       </div>
       <div class="pw-row heat-row">
-        <div class="lbl">HEAT LOAD${heatTip}<b class="${hot?'bad':''}">${load(n.heat)}%</b></div>
-        <div class="hwrap">
-          <div class="hbar ${hot?'hot':''}"><i class="cur" style="width:${hpct(hlo)}%"></i><i class="${n.heat>t.heat?'add':'rem'}" style="left:${hpct(hlo)}%;width:${hpct(hhi)-hpct(hlo)}%"></i></div>
-          <div class="hstat ${hot?'no':'ok'}">${hot?'OVERHEATS ON SUSTAINED FIRE':'∞ SUSTAINED FIRE'}</div>
-        </div>
-        <div class="dslot">${hd?`<span class="sd ${hot?'dn':dcls('heat',hd)}">${sgn(hd)}%</span>`:''}</div>
+        <div class="lbl">FIRE TIME${heatTip}<b>${secs(n.fireTime)}</b></div>
+        <div class="hnum" title="Seconds the heatsink needs to cool down after an overheat"><span>COOLDOWN</span><b>${isFinite(n.fireTime) ? secs(n.coolTime) : '—'}</b></div>
+        <div class="dslot">${fdTxt?`<span class="sd ${fdCls}">${fdTxt}</span>`:''}</div>
       </div>
-      <div class="stats">
+      ${flag('maxRatings') ? `<div class="dpsblock">${dpsRow('PRIMARY DPS','priDps',t,n)}${dpsRow('SECONDARY DPS','secDps',t,n)}</div>` : ''}
+      ${flag('maxRatings') ? `<div class="dpsblock lines">   <!-- same row layout as the DPS rows -->
+        ${lineRow('speed','MAX SPEED',n.maxSpeed,n.maxSpeed-t.maxSpeed,'maxSpeed', rate(n.maxSpeed, gameMax('speed')))}
+        ${lineRow('boost','BOOST DURATION',n.boostTime,n.boostTime-t.boostTime,'boostTime')}
+      </div>
+      <div class="dpsblock lines defense">   <!-- defence apart from mobility -->
+        ${lineRow('hull','INTEGRITY',BODY.integrity,0,'')}
+        ${lineRow('shield','SHIELD POWER',BODY.shield,0,'')}
+      </div>` : `<div class="stats">
+        ${flag('maxRatings') ? '' : statCell('dps','PRIMARY DPS',n.priDps,n.priDps-t.priDps,'priDps')}
+        ${flag('maxRatings') ? '' : statCell('dps','SECONDARY DPS',n.secDps,n.secDps-t.secDps,'secDps')}
+        ${statCell('speed','MAX SPEED',n.maxSpeed,n.maxSpeed-t.maxSpeed,'maxSpeed', flag('maxRatings') ? rate(n.maxSpeed, gameMax('speed')) : null)}
+        ${statCell('boost','BOOST DURATION',n.boostTime,n.boostTime-t.boostTime,'boostTime')}
         ${statCell('hull','INTEGRITY',BODY.integrity,0,'')}
         ${statCell('shield','SHIELD POWER',BODY.shield,0,'')}
-        ${statCell('dps','PRIMARY DPS',n.priDps,n.priDps-t.priDps,'priDps')}
-        ${statCell('dps','SECONDARY DPS',n.secDps,n.secDps-t.secDps,'secDps')}
-        ${statCell('speed','MAX SPEED',n.maxSpeed,n.maxSpeed-t.maxSpeed,'maxSpeed')}
-        ${statCell('boost','BOOST DURATION',n.boostTime,n.boostTime-t.boostTime,'boostTime')}
-      </div>
+      </div>`}
     </div></div>`;
 
   // ---- cargo (filtered by the size of the selected socket)
@@ -657,43 +820,122 @@ function renderRight(){
   // "keyStats" experiment: key stat + delta vs the mounted module on every row, BEST tag on the top upgrade
   const keys = flag('keyStats'), mounted = curA?.t==='mod' ? curIt : null;
   const info = list.map(m => { const pyl = isPylon(m.id), room = hasRoom(S.sel,m.id); return { m, pyl, room, fits: room && (pyl || wouldFit(S.sel,m.id)) }; });
+  const overBy = id => calc(attachTo(S.att, S.cargo, S.sel, id).att).power - BODY.generator;   // power points missing
   const cands = keys ? info.filter(x => !x.pyl && x.fits) : [];
   const top = cands.length>1 ? Math.max(...cands.map(x => statOf(x.m))) : null;
   const bestOk = top!==null && (!mounted || mounted.kind!==cands[0].m.kind || top>statOf(mounted));
   const rows = info.map(({ m, pyl, room, fits }, i)=>{
     const focus = S.focus==='cargo' && i===S.cargoIdx, hov = S.hoverCargo===m.id;
     const label = !room ? 'CARGO FULL' : !fits ? 'NO POWER' : (curIt?'REPLACE':'EQUIP');
+    // "blockedReason" experiment: a row that cannot be mounted always says why, even without focus / hover
+    const why = flag('blockedReason') && !fits ? (!room ? 'CARGO FULL' : `NO POWER <b>+${overBy(m.id)}</b>`) : '';
     const two = keys && !pyl;
     let sub = '';
     if(two){
-      const k = KEYSTAT[m.kind], d = mounted && mounted.kind===m.kind ? m[k]-mounted[k] : null;
+      // the row shows the stat the list is sorted by: power when sorting by power, the key stat otherwise
+      const byPow = S.sort==='power', k = byPow ? 'power' : KEYSTAT[m.kind];
+      const d = mounted && (byPow || mounted.kind===m.kind) ? m[k]-mounted[k] : null;
       const dh = d===null ? '' : d ? `<span class="dlt ${dcls(k,d)}">${d>0?'▲':'▼'} ${fmt(Math.abs(d))}</span>` : '<span class="dlt nt">=</span>';
-      const best = bestOk && fits && statOf(m)===top ? `<span class="best" title="Highest ${STAT_META[k].label} among the parts you can mount here">BEST</span>` : '';
-      sub = `<div class="sub"><span class="q">×${S.cargo[m.id]}</span><span>${k==='dps'?'DPS':'SPEED'} <b>${m[k]}</b></span>${dh}${best}</div>`;
+      const best = !byPow && bestOk && fits && statOf(m)===top ? `<span class="best" title="Highest ${STAT_META[k].label} among the parts you can mount here">BEST</span>` : '';
+      sub = `<div class="sub">${flag('stackBadge') ? '' : `<span class="q">×${S.cargo[m.id]}</span>`}<span>${byPow?'POWER':k==='dps'?'DPS':'SPEED'} <b>${m[k]}</b></span>${dh}${best}</div>`;
     }
     return `<div class="cg-row ${pyl?'pyl':KIND[m.kind].cls+' rar'} ${two?'two':''} ${focus?'sel':''} ${hov?'hov':''} ${fits?'':'nopow'}" data-item="${m.id}" data-i="${i}"${pyl?'':` style="--rc:${rarCol(m)}"`}>
-      <div class="ic">${ico(pyl?'pylon':m.fam)}</div>
-      <div class="mid"><div class="nm"><span class="nmt">${m.name}</span>${pyl||two?'':`<small>×${S.cargo[m.id]}</small>`}</div>${sub}</div>
+      <div class="ic">${ico(pyl?'pylon':m.fam)}${!pyl && flag('stackBadge') ? `<span class="qty" title="In cargo">${S.cargo[m.id]}</span>` : ''}</div>
+      <div class="mid"><div class="nm">${!pyl && flag('rarityTag') ? rarTag(m) : ''}<span class="nmt">${m.name}</span>${pyl||two||flag('stackBadge')?'':`<small>×${S.cargo[m.id]}</small>`}</div>${sub}</div>
       ${pyl?outGlyphs(m):two?'':`<span class="outs">${sg(m.size,14)}</span>`}
-      <div class="act">${focus||hov?label:''}${focus?glyph('A'):''}</div>
+      <div class="act">${why ? `<span class="why" title="${!room?'No free cargo slot for the parts that would come back':'Power needed above the Body generator'}">${why}</span>` : focus||hov?label:''}${focus?glyph('A'):''}</div>
     </div>`;
-  }).join('') || `<div class="cg-empty">NO ${TAB_LABEL[S.tab].toUpperCase()} FOR A ${SIZE[sock.size].label} SOCKET IN CARGO<br><span class="cg-sub">Try another tab, or craft / loot new parts</span></div>`;
+  }).join('') || (holdsParts(S.sel) ? `<div class="cg-empty locked">${ico('lock')}<br>THIS ARM HOLDS ${partsOn(S.sel)} PART${partsOn(S.sel)>1?'S':''}<br><span class="cg-sub">Only end parts can be replaced or removed: remove the parts on this arm first</span></div>`
+     : `<div class="cg-empty">NO ${TAB_LABEL[S.tab].toUpperCase()} FOR A ${SIZE[sock.size].label} SOCKET IN CARGO<br><span class="cg-sub">Try another tab, or craft / loot new parts</span></div>`);
   const targetRight = keys && S.tab!=='pylon' ? `<button class="sortchip" data-sort title="Change the ordering of this list">SORT · ${sortLabel()}</button>` : `<span>${curIt?curIt.name.toUpperCase():'EMPTY'}</span>`;
 
   const cg = `<div class="cg">
     <div class="head">CARGO<small>${cargoSlots(S.cargo)} / ${CARGO_SLOTS} SLOTS</small></div>
+    ${flag('slideCargo') ? `<button class="cg-back" data-act="b">${glyph('B')}<span>BACK TO SOCKETS</span></button>` : ''}
     <div class="target"><span>TARGET · ${sg(sock.size,14)} <b>${SIZE[sock.size].label} SOCKET</b> · ${SIZE[sock.size].name.toUpperCase()}</span>${targetRight}</div>
     <div class="cats">${glyph('LT')}${cats}${glyph('RT')}</div>
     <div class="cg-list">${rows}</div>
   </div>`;
 
-  $('#right').innerHTML = ov + cg;
+  if(flag('slideCargo')){                                 // cargo lives in its own panel, open only while choosing a part
+    $('#right').innerHTML = ov;
+    $('#cargoPanel').innerHTML = cg;
+    $('#cargoPanel').classList.toggle('open', S.focus==='cargo');
+  }else{ $('#right').innerHTML = ov + cg; $('#cargoPanel').innerHTML = ''; $('#cargoPanel').classList.remove('open'); }
   const l = $('.cg-list'); if(l) l.scrollTop = keep;
 }
 
+/* ---------- "maxRatings" experiment: how close the build is to the best this Body can reach ----------
+   Exact optimum over every legal build of the current Body with unlimited copies of any catalogue module:
+   best(size, root)[p] = highest total with at most p power in a socket of that size, taking the max of
+     empty (0) · any module of that size (metric, costs its power) · Extension arm (root sockets only, 0 power,
+     same size, child is not a root) · Split arm (size >= 2, 0 power, two children of size-1).
+   The Body total is the "at most p" convolution of its root sockets, read at p = generator. Memoised per Body. */
+const MAX_CACHE = {};
+function bestBuild(metric, body = BODY){
+  const key = body.id+'|'+metric, G = body.generator; if(MAX_CACHE[key]!=null) return MAX_CACHE[key];
+  const val = m => metric==='value' ? m.value : metric==='speed' ? (m.kind==='engine' ? m.speed : 0)
+    : metric==='priDps' ? (m.kind==='primary' ? m.dps : 0) : (m.kind==='secondary' ? m.dps : 0);
+  const conv = (a,b) => a.map((_,p) => { let v = 0; for(let i=0;i<=p;i++) v = Math.max(v, a[i]+b[p-i]); return v; });
+  const memo = {};
+  const best = (size, root) => {
+    const k = size+(root?'r':'c'); if(memo[k]) return memo[k];
+    const r = Array(G+1).fill(0);
+    for(const m of Object.values(MODS)) if(m.size===size && val(m)>0) for(let p=m.power;p<=G;p++) r[p] = Math.max(r[p], val(m));
+    for(let p=1;p<=G;p++) r[p] = Math.max(r[p], r[p-1]);
+    if(root){ const e = best(size,false); for(let p=0;p<=G;p++) r[p] = Math.max(r[p], e[p]); }
+    if(size>=2){ const c = best(size-1,false), sp = conv(c,c); for(let p=0;p<=G;p++) r[p] = Math.max(r[p], sp[p]); }
+    return memo[k] = r;
+  };
+  let tot = Array(G+1).fill(0);
+  for(const s of body.sockets) tot = conv(tot, best(s.size, true));
+  const integ = metric==='value' ? 0 : (body.integrated||[]).reduce((a,g) => a + val(g.mod), 0);   // value: already in body.value
+  return MAX_CACHE[key] = tot[G] + integ + (metric==='value' ? (body.value||0) : 0);
+}
+// the rating scale is global: the best any Body in the game data can reach (custom .glb bodies excluded)
+const gameMax = metric => Math.max(...BODY_LIST.filter(id => BODIES[id].tag!=='CUSTOM').map(id => bestBuild(metric, BODIES[id])));
+// rating of a value against the game max: colour of the rarity band it falls into (LV1 brown … LV7 gold)
+function rate(cur, max){
+  const r = max ? Math.min(1, cur/max) : 0, band = Math.min(7, Math.floor(r*7)+1);
+  return { c:RARITY[band].color, attrs:`style="--rc:${RARITY[band].color}" title="${Math.round(r*100)}% of the best build in the game (${fmt(max)})"` };
+}
+function ratedBar(cur, max){
+  const r = max ? Math.min(1, cur/max) : 0, band = Math.min(7, Math.floor(r*7)+1), c = RARITY[band].color;
+  return `<div class="rated" style="--rc:${c}" title="${Math.round(r*100)}% of the best build in the game (${fmt(max)})"><i style="width:${(r*100).toFixed(1)}%"></i></div><span class="ratedp" style="color:${c}">${Math.round(r*100)}% OF MAX</span>`;
+}
+// generic overview line with the DPS-row layout: icon + label on the left, big value, fixed delta slot
+function lineRow(icon, label, val, delta, k, rated=null){
+  const v = k==='boostTime' && !val ? '—' : fmtStat(k,val).replace(/\s?([a-z/%]+)$/i, '<small>$1</small>');
+  return `<div class="dpsrow ${rated?'rated-bg':''}" ${rated?rated.attrs:''}><div class="dh"><span class="rl">${ico(icon)}${label}</span><b>${v}</b>`
+    + `<div class="dslot">${delta?`<span class="sd ${dcls(k,delta)}">${sgnStat(k,delta)}</span>`:''}</div></div></div>`;
+}
+function dpsRow(label, key, t, n){
+  const d = n[key]-t[key], mx = gameMax(key);
+  return `<div class="dpsrow rated-bg" ${rate(n[key], mx).attrs}><div class="dh"><span class="rl">${ico('dps')}${label}</span><b>${fmt(n[key])}</b><div class="dslot">${d?`<span class="sd ${d>0?'up':'dn'}">${sgn(d)}</span>`:''}</div></div></div>`;
+}
+
+/* ---------- "shipQuality" experiment: how good the mounted modules are ---------- */
+function qualityRow(t, n){
+  const shape = size => { const sh = SIZE[size].shape; return `<svg viewBox="0 0 16 16">${sh==='tri' ? '<path d="M8 2.5L14 13H2Z"/>' : sh==='sq' ? '<rect x="3" y="3" width="10" height="10"/>' : '<circle cx="8" cy="8" r="5.5"/>'}</svg>`; };
+  // one square per mounted module: rarity colour, with the shape of the socket it sits in; best first
+  const segs = [...n.mq].sort((a,b) => b.lv-a.lv || b.size-a.size).map(m => `<i class="qt" style="--rc:${RARITY[m.lv].color}" title="LV${m.lv} · ${SIZE[m.size].label} socket">${shape(m.size)}</i>`).join('');
+  const d = n.gear - t.gear;
+  return `<div class="qrow" title="Average rarity of the mounted modules; one segment per module, best first">
+    <div class="qhead"><span class="rl">LOADOUT QUALITY</span><span class="qv">${n.lvs.length ? `<small>AVG LV <b>${n.gear.toFixed(1)}</b></small>` : '<small>NO MODULES</small>'}</span>
+      <div class="dslot">${Math.abs(d) >= .05 ? `<span class="sd ${d>0?'up':'dn'}">${d>0?'+':'−'}${Math.abs(d).toFixed(1)}</span>` : ''}</div></div>
+    <div class="qtiles">${segs}</div>
+  </div>`;
+}
+
 /* ---------- compare card ---------- */
+// "compactCard" experiment: stats as a two-column grid of short cells (label close to its value)
+const CARD_SHORT = { ammo:'Ammo', power:'Power', heat:'Heat', mag:'Magazine', dps:'DPS', dmg:'Damage', rate:'Fire rate', acc:'Accuracy', speed:'Speed', boostUse:'Boost use' };
+const ccell = (icon, label, full, val, old, dl='', dcl='') => `<div class="cst" title="${full}"><span class="cl">${icon}<span>${label}</span></span>`
+  + `<span class="cv">${old!=null ? `<i>${old}</i><em>→</em>` : ''}<b>${val}</b></span><span class="cd ${dcl}">${dl}</span></div>`;
+const cgrid = cells => `<div class="cgrid">${cells.join('')}</div>`;
+
 function renderCard(){
-  const sock = selSock(), curA = S.att[S.sel], cur = curA ? ITEM(curA.id) : null;
+  const sock = selSock(), curA = S.att[S.sel], cur = curA ? ITEM(curA.id) : null, compact = flag('compactCard');
   const head = title => `<div class="ch"><span class="tg">${sg(sock.size,14)} ${SIZE[sock.size].label} SOCKET</span>${title}</div>`;
   let html;
   if(!PV){
@@ -703,10 +945,14 @@ function renderCard(){
     }else if(curA.t==='pyl'){
       const kids = (sock.kids||[]).map(k => `<span class="kidchip">${sg(k.size,13)} ${S.att[k.id]?ITEM(S.att[k.id].id).name:'<i>free</i>'}</span>`).join('');
       html = head(cur.name.toUpperCase()) + `<div class="emptyc">${cur.type==='ext'?'Extension':'Split'} arm · ${SIZE[cur.size].label} in → ${outputsOf(cur).map(n=>SIZE[n].label).join(' + ')} out<div class="kids">${kids}</div></div>
-        <div class="cf"><span>Select a cargo item to swap this arm (attached parts return to cargo)</span><span>${glyph('A')}</span></div>`;
+        <div class="cf">${holdsParts(S.sel)
+          ? `<span class="lockline">${ico('lock')} Holds ${partsOn(S.sel)} part${partsOn(S.sel)>1?'s':''} · only end parts can be changed: remove them first</span>`
+          : `<span>Select a cargo item to swap this arm</span><span>${glyph('A')}</span>`}</div>`;
     }else{
       const rows = modKeys(cur).map(k=>`<tr><td>${ico(STAT_META[k].icon)}${STAT_META[k].label}</td><td>${fmtStat(k,cur[k])}</td></tr>`).join('');
-      html = head(`${rarDot(cur)}${cur.name.toUpperCase()}<span class="fam">${FAMILY[cur.fam].label}</span>`) + `<table><tr><th>STAT</th><th>INSTALLED</th></tr>${rows}</table>
+      const body = compact ? cgrid(modKeys(cur).map(k => ccell(ico(STAT_META[k].icon), CARD_SHORT[k], STAT_META[k].label, fmtStat(k,cur[k]))))
+                           : `<table><tr><th>STAT</th><th>INSTALLED</th></tr>${rows}</table>`;
+      html = head(`${rarDot(cur)}${cur.name.toUpperCase()}<span class="fam">${FAMILY[cur.fam].label}</span>`) + `${body}
         <div class="cf"><span>Select a cargo item to compare it against <b>${cur.name}</b></span><span>${glyph('A')}</span></div>`;
     }
   }else{
@@ -717,7 +963,23 @@ function renderCard(){
       ? `<span class="old">${cur?rarDot(cur)+cur.name.toUpperCase():'EMPTY'}</span><span class="arrow">➜</span>${rarDot(to)}${to.name.toUpperCase()}`
       : `REMOVE <span class="old">${rarDot(cur)}${cur.name.toUpperCase()}</span>`;
     let table = '';
-    if(!pylonCase){
+    if(compact && !pylonCase){
+      table = cgrid((cur && to && cur.kind!==to.kind ? modKeys(to) : modKeys(cur,to)).map(k => {
+        const has = it => it && MOD_KEYS[it.kind].includes(k), val = it => has(it) ? fmtStat(k,it[k]) : '—';
+        let dl, dcl;
+        if(STAT_META[k].text){ dl = has(cur)&&has(to)&&cur[k]===to[k] ? '=' : '≠'; dcl = 'nt'; }
+        else { const d = mv(to,k)-mv(cur,k); dl = d ? sgnStat(k,d) : '='; dcl = d ? dcls(k,d) : 'nt'; }
+        return ccell(ico(STAT_META[k].icon), CARD_SHORT[k], STAT_META[k].label, val(to), cur ? val(cur) : null, dl, dcl);
+      }));
+    }else if(compact){
+      const outs = it => it && isPylon(it.id) ? `<span class="outs">${outputsOf(it).map(n=>sg(n,14)).join('')}</span>` : '—';
+      const cells = [ccell(ico('sockets'), 'Outputs', 'Output sockets of the arm', outs(to), outs(cur))];
+      for(const n of SIZE_ORDER){
+        const d = PV.t1.sock[n].free - T0.sock[n].free;
+        if(d) cells.push(ccell(sg(n,14), `Free ${SIZE[n].label}`, `Free ${SIZE[n].label} sockets`, PV.t1.sock[n].free, T0.sock[n].free, sgn(d), d>0?'up':'nt'));
+      }
+      table = cgrid(cells);
+    }else if(!pylonCase){
       table = `<table><tr><th>STAT</th><th>${cur?'INSTALLED':''}</th><th>${to?'NEW':''}</th><th>Δ</th></tr>` + (cur && to && cur.kind!==to.kind ? modKeys(to) : modKeys(cur,to)).map(k=>{   // different module types: only the new one's params
         const has = it => it && MOD_KEYS[it.kind].includes(k);
         const cell = it => has(it) ? fmtStat(k,it[k]) : '—';
@@ -763,35 +1025,46 @@ function renderBottom(){
     left += H(glyph('A'),'Select body','data-act="a"');
     left += H(glyph('B'),'Cancel','data-act="b"');
   }else if(S.focus==='body'){
-    left += H(glyph('dpad'),'Change body','data-act="none"');
-    left += H(glyph('A'),'Body list','data-act="a"');
+    left += H(glyph('dpad'), flag('bodyButton') ? 'Switch body' : 'Change body','data-act="none"');
+    if(!flag('bodyButton')) left += H(glyph('A'),'Body list','data-act="a"');
+    if(flag('undoRedo')) left += H(glyph('X'),'Reset build','data-act="x"');
   }else if(S.focus==='slots'){
     left += H(glyph('dpad'),'Select socket','data-act="none"');
-    left += H(glyph('A'), curA?'Replace':'Choose part','data-act="a"');
-    left += H(glyph('X'),'Unequip','data-act="x"', curA?'':'off');
+    left += H(glyph('A'), curA?'Replace':'Choose part','data-act="a"', holdsParts(S.sel)?'off':'');
+    if(flag('listModes')) left += H(glyph('X'),'Sort · hold: Unequip','id="hUnq" data-hold="unq"', 'hold');
+    else left += H(glyph('X'),'Unequip','data-act="x"', curA && !holdsParts(S.sel)?'':'off');
   }else{
     left += H(glyph('dpad'),'Compare','data-act="none"');
     left += H(glyph('A'), !cm ? 'Equip' : !room ? 'Cargo full' : !fits ? 'Not enough power' : curA?'Replace':'Equip','data-act="a"', (!cm||!fits)?'off':'');
     left += H(glyph('B'),'Back','data-act="b"');
     if(flag('keyStats') && S.tab!=='pylon') left += H(glyph('SORT'),'Sort','data-act="sort"');
   }
-  if(!S.picker && S.focus!=='body'){
-    left += H(glyph('LT')+glyph('RT'),'Category','data-act="cat"');
-    left += H(glyph('Y'),'Remove all','id="hAll" data-hold="all"','hold');
+  if(!S.picker && flag('undoRedo')){
+    const h = histOf();
+    // one hint for both: each glyph is its own click target
+    left += `<div class="hint ${h.u.length||h.r.length?'':'off'}"><span class="hg ${h.u.length?'':'off'}" data-act="undo">${glyph('L3')}</span><span class="hg ${h.r.length?'':'off'}" data-act="redo">${glyph('R3')}</span><span>Undo / Redo</span></div>`;
   }
-  left += H(glyph('RS'), d==='gamepad'?'Rotate':'Rotate / zoom','data-act="none"');
-  left += H(glyph('VIEW'),'View mode','data-act="view"');
+  const slide = flag('slideCargo'), inCargo = S.focus==='cargo';
+  if(!S.picker && S.focus!=='body'){
+    // with the slide-in cargo, categories only matter while it is open, and build-wide actions only while it is closed
+    if(!slide || inCargo) left += H(d==='gamepad' ? glyph('LT')+glyph('RT') : glyph('RT'),'Category','data-act="cat"');   // keyboard: Tab (Shift+Tab goes back)
+  }
+  // Remove all: only when something is mounted, in the socket list and on the Body row (switching Body lands there)
+  if(!S.picker && (!slide || !inCargo) && Object.keys(S.att).length) left += H(glyph('Y'),'Remove all','id="hAll" data-hold="all"','hold');
+  left += H(glyph('RS'),'Rotate','data-act="none"');
+  if(!slide || !inCargo) left += H(glyph('VIEW'),'View mode','data-act="view"');
   const pref = { gamepad:'GAMEPAD', keyboard:'KEYBOARD', auto:'AUTO' }[S.inputPref];
   $('#bottom').innerHTML = `<div class="hints">${left}</div>
     <div class="rightbar">
       <button class="inputpill" id="pill" title="Mockup only: switch the input hints">INPUT · ${pref}</button>
+      ${flag('intro') ? H(glyph('GUIDE'),'Guide','data-act="guide" title="How crafting works"','guidehint') : ''}
       <div class="leave" id="hLeave" data-hold="leave">${glyph('START')}<span>HOLD TO LEAVE</span></div>
     </div>`;
 }
 
 /* ---------- local save: builds survive a page refresh ---------- */
 // every version keeps its own save; a version that has none yet starts from the 0.4.0 one
-const SAVE_KEY = 'crafting.save.' + APP_VERSION, LEGACY_SAVE_KEY = 'crafting.save.v1';
+const SAVE_KEY = 'crafting.save.' + STORE_VER, LEGACY_SAVE_KEY = 'crafting.save.v1';
 let lastSave = '';
 function saveLocal(){
   const builds = { ...S.builds, [BODY.id]: S.att };
@@ -805,9 +1078,17 @@ function loadLocal(){
   // drop anything the current catalogue no longer knows (renamed modules, custom .glb bodies)
   const okAtt = a => Object.fromEntries(Object.entries(a||{}).filter(([,v]) => v && ITEMS[v.id] && (v.t==='pyl')===isPylon(v.id)));
   const builds = {};
-  for(const [id,a] of Object.entries(d.builds)) if(BODIES[id]) builds[id] = okAtt(a);
   // modules added to the catalogue after the save start with a full stack
   const cargo = Object.fromEntries(Object.keys(MODS).map(id => [id, Math.max(0, +(d.cargo?.[id] ?? STACK) || 0)]));
+  for(const [id,a] of Object.entries(d.builds)){
+    if(BODIES[id]) builds[id] = okAtt(a);
+    else for(const v of Object.values(okAtt(a))) if(v.t==='mod') cargo[v.id] = (cargo[v.id]||0) + 1;   // Body gone: parts back to cargo
+  }
+  for(const [id,a] of Object.entries(builds)){
+    const L = layout(a, BODIES[id]), keep = {};
+    for(const [k,v] of Object.entries(a)){ if(L.byId[k]) keep[k] = v; else if(v.t==='mod') cargo[v.id] = (cargo[v.id]||0) + 1; }
+    builds[id] = keep;
+  }
   if(BODIES[d.body]) BODY = BODIES[d.body];
   S.att = builds[BODY.id] || {}; delete builds[BODY.id];
   S.builds = builds; S.cargo = cargo;
@@ -859,9 +1140,11 @@ function cycleCat(dir){
 }
 function equip(id, sid=S.sel){
   const it = ITEM(id); if(!it || !(isPylon(id) || S.cargo[id]>0) || !canMount(id, LY.byId[sid])) return;
+  if(holdsParts(sid)){ toast('REMOVE THE PARTS ON THIS ARM FIRST','bad'); return; }
   const pre = makePreview(sid,id);
   if(!pre.fits){ toast('NOT ENOUGH POWER','bad'); return; }
   if(!pre.room){ toast('CARGO FULL','bad'); return; }
+  record(`${it.name} ${S.att[sid] ? 'replaced ' + ITEM(S.att[sid].id).name : 'equipped'}`);
   const r = attachTo(S.att, S.cargo, sid, id);
   S.att = r.att; S.cargo = r.cargo;
   S.focus = 'slots'; S.hoverCargo = null; S.cargoIdx = 0;
@@ -875,12 +1158,86 @@ function equip(id, sid=S.sel){
 function unequip(sid=S.sel){
   const a = S.att[sid]; S.hoverRemove = null;
   if(!a){ toast('SOCKET ALREADY EMPTY','info'); renderAll(); return; }
+  if(holdsParts(sid)){ toast('REMOVE THE PARTS ON THIS ARM FIRST','bad'); renderAll(); return; }
   const r = attachTo(S.att, S.cargo, sid, null);
   if(cargoSlots(r.cargo) > CARGO_SLOTS){ toast('CARGO FULL','bad'); renderAll(); return; }
+  record(`${ITEM(a.id).name} removed`);
   S.att = r.att; S.cargo = r.cargo;
   toast(r.ret.length>1 ? `${r.ret.length} PARTS MOVED TO CARGO` : `${ITEM(a.id).name.toUpperCase()} MOVED TO CARGO`,'info');
   flash(sid);
 }
+/* ---------- "undoRedo" experiment: undo / redo of build changes, reset build ----------
+   History is kept per Body and stores only the attachments. Cargo is never restored from a
+   snapshot (it is shared by all Bodies): undo/redo moves the difference between the two builds
+   in or out of cargo, and refuses if cargo cannot cover it. */
+const HIST_MAX = 30;
+const histOf = () => S.hist[BODY.id] || (S.hist[BODY.id] = { u:[], r:[] });
+function record(label){
+  if(!flag('undoRedo')) return;
+  const h = histOf(); h.u.push({ att:S.att, label }); if(h.u.length > HIST_MAX) h.u.shift(); h.r = [];
+}
+// cargo after swapping the current build for `target`, or null if cargo cannot cover it
+function cargoFor(target){
+  const C = { ...S.cargo };
+  for(const a of Object.values(S.att)) if(!isPylon(a.id)) C[a.id] = (C[a.id]||0)+1;
+  for(const a of Object.values(target)) if(!isPylon(a.id)) C[a.id] = (C[a.id]||0)-1;
+  return Object.values(C).some(v => v<0) || cargoSlots(C) > CARGO_SLOTS ? null : C;
+}
+function stepHistory(dir){                  // dir -1 = undo, +1 = redo
+  if(!flag('undoRedo')) return;
+  const h = histOf(), from = dir<0 ? h.u : h.r, to = dir<0 ? h.r : h.u, word = dir<0 ? 'UNDO' : 'REDO';
+  const e = from[from.length-1];
+  if(!e){ toast(`NOTHING TO ${word}`,'info'); return; }
+  const C = cargoFor(e.att);
+  if(!C){ toast(`CAN'T ${word} · CARGO`,'bad'); return; }
+  from.pop(); to.push({ att:S.att, label:e.label });
+  S.att = e.att; S.cargo = C; S.hoverCargo = S.hoverRemove = null;
+  if(S.focus==='cargo') S.focus = 'slots';
+  toast(`${word} · ${e.label.toUpperCase()}`,'info'); renderAll();
+}
+function resetBuild(){
+  // back to the Body's starting build; parts missing from cargo are left out
+  const def = DEFAULT_ATT[BODY.id] || {}, C = { ...S.cargo }, att = {};
+  for(const a of Object.values(S.att)) if(!isPylon(a.id)) C[a.id] = (C[a.id]||0)+1;
+  for(const k of Object.keys(def).sort((x,y) => x.length-y.length)){
+    const a = def[k], parent = k.includes('.') ? k.slice(0, k.lastIndexOf('.')) : null;
+    if(parent && !att[parent]) continue;
+    if(isPylon(a.id)) att[k] = a;
+    else if(C[a.id] > 0){ att[k] = a; C[a.id]--; }
+  }
+  if(cargoSlots(C) > CARGO_SLOTS){ toast('CARGO FULL','bad'); return; }
+  if(JSON.stringify(att)===JSON.stringify(S.att)){ toast('ALREADY THE STARTING BUILD','info'); return; }
+  record('Reset build');
+  S.att = att; S.cargo = C; S.focus = 'slots'; S.sel = navOrder(layout(att))[0] || BODY.sockets[0].id;
+  toast(`${BODY.name} · STARTING BUILD RESTORED`,'info'); renderAll();
+}
+
+/* ---------- "intro" experiment: first-time guide ---------- */
+const INTRO_KEY = 'crafting.intro.seen';
+function openIntro(){ if(!flag('intro')) return; S.intro = true; renderIntro(); }
+function closeIntro(){ S.intro = false; try{ localStorage.setItem(INTRO_KEY,'1'); }catch(e){} renderIntro(); }
+function renderIntro(){
+  const el = $('#intro'); if(!el) return;
+  if(!S.intro){ el.classList.remove('show'); el.innerHTML = ''; return; }
+  const card = (icon, title, body) => `<div class="in-card"><div class="in-ic">${icon}</div><b>${title}</b><p>${body}</p></div>`;
+  el.innerHTML = `<div class="in-box">
+    <div class="in-head">CRAFTING · HOW IT WORKS</div>
+    <div class="in-grid">
+      ${card(`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3 7 7 3-7 3-3 7-3-7-7-3 7-3z"/></svg>`, 'BODY',
+        `The core of your ship. It has 2 integrated weapons and 1 integrated engine that give its base damage and speed and cannot be changed. Its sockets come in three sizes: ${sg(1,16)} P1 · ${sg(2,16)} P2 · ${sg(3,16)} P3. A socket only takes parts of its own size.`)}
+      ${card(ico('pylon'), 'ARMS',
+        'Unlimited. An <b>Extension</b> (Body sockets only) moves a socket outward; a <b>Split</b> turns one socket into two smaller ones.')}
+      ${card(ico('primary'), 'MODULES',
+        `Weapons and engines come from cargo: 25 slots, up to 14 identical parts per slot. The coloured LV tag before a name shows its rarity (LV1 to LV7)${flag('typeShape') ? `. The left end of a row shows the type: <span class="tsh pri"></span>primary <span class="tsh sec"></span>secondary <span class="tsh eng"></span>engine` : ''}.`)}
+      ${card(ico('power'), 'POWER &amp; HEAT',
+        'Modules draw power from the Body generator and you cannot go over it. Primary weapons heat up and always overheat in the end: the Body heatsink decides how long you can fire and how fast you cool down.')}
+    </div>
+    <div class="in-foot"><span>Reopen this guide any time from <b>GUIDE</b> in the bottom bar (${glyph('GUIDE')}${dev()==='keyboard'?'':' short press'})</span>
+      <button class="in-go" data-intro-close>${glyph('A')} START CRAFTING</button></div>
+  </div>`;
+  el.classList.add('show');
+}
+
 /* ---------- DEBUG (mockup only, not part of the game): random legal build ---------- */
 // Walks the sockets breadth-first and fills each with an arm, a module or nothing, following
 // the same rules as the player: socket size, extensions only on Body sockets, power budget,
@@ -904,6 +1261,7 @@ function randomBuild(){
       if(mods.length && Math.random() < .9){ const m = pick(mods); att = { ...att, [sid]:M(m.id) }; C[m.id]--; }
     }
     if(cargoSlots(C) > CARGO_SLOTS) continue;
+    record('Random build');
     S.att = att; S.cargo = C; S.focus = 'slots'; S.sel = navOrder(layout(att))[0];
     toast(`DEBUG · RANDOM BUILD · ${Object.keys(att).length} PARTS`,'info'); renderAll();
     return;
@@ -915,19 +1273,24 @@ function removeAll(){
   const n = Object.keys(S.att).length, C = { ...S.cargo };
   for(const k of Object.keys(S.att)) if(!isPylon(S.att[k].id)) C[S.att[k].id] = (C[S.att[k].id]||0)+1;
   if(cargoSlots(C) > CARGO_SLOTS){ toast('CARGO FULL','bad'); return; }
+  if(n) record('Remove all');
   S.cargo = C; S.att = {}; S.focus = 'slots'; S.sel = BODY.sockets[0].id;
   toast(n?`${n} PARTS MOVED TO CARGO`:'NOTHING TO REMOVE','info'); renderAll();
 }
 function act(name){
   S.hoverCargo = S.hoverRemove = null;
+  if(S.intro){ if(name==='a' || name==='b') closeIntro(); return; }
   if(name==='view'){ setView(!S.view); return; }
   if(S.view){ if(name==='b') setView(false); return; }
   if(S.picker){
     ({ left:()=>pickMove(-1), right:()=>pickMove(1), up:()=>pickMove(-2), down:()=>pickMove(2), a:confirmPick, b:closePicker })[name]?.();
     return;
   }
+  if(name==='undo' || name==='redo'){ stepHistory(name==='undo' ? -1 : 1); return; }
+  if(name==='guide'){ openIntro(); return; }
   if(S.focus==='body'){
-    ({ left:()=>stepBody(-1), right:()=>stepBody(1), down:()=>{ S.focus='slots'; renderAll(); }, a:openPicker })[name]?.();
+    ({ left:()=>stepBody(-1), right:()=>stepBody(1), down:()=>{ S.focus='slots'; renderAll(); }, a:()=>{ if(!flag('bodyButton')) openPicker(); },
+       x:()=>{ if(flag('undoRedo')) resetBuild(); } })[name]?.();
     return;
   }
   switch(name){
@@ -935,13 +1298,15 @@ function act(name){
     case 'down': moveSel(1); break;
     case 'a':
       if(S.focus==='slots'){
+        if(holdsParts(S.sel)){ toast(`LOCKED · ${partsOn(S.sel)} PART${partsOn(S.sel)>1?'S':''} ON THIS ARM · REMOVE THEM FIRST`,'bad'); return; }
         if(!cargoList().length){ toast(`NOTHING FOR A ${SIZE[selSock().size].label} SOCKET IN THIS TAB`,'info'); return; }
         S.focus='cargo'; S.cargoIdx=0; renderAll();
       } else { const m = cargoList()[S.cargoIdx]; if(m) equip(m.id); }
       break;
-    case 'b': case 'left': if(S.focus==='cargo'){ S.focus='slots'; renderAll(); } break;
+    case 'b': if(S.focus==='cargo'){ S.focus='slots'; renderAll(); } break;
+    case 'left': if(S.focus==='cargo'){ S.focus='slots'; renderAll(); } break;
     case 'x': unequip(S.sel); break;
-    case 'sort': cycleSort(); break;
+    case 'sort': if(S.focus==='cargo') cycleSort(); else cycleListMode(1); break;   // same key sorts the list that has focus
     case 'catNext': cycleCat(1); break;
     case 'catPrev': cycleCat(-1); break;
   }
@@ -955,7 +1320,7 @@ function setView(on){
   else { Object.assign(S.rot, homeRot()); window.resetPan?.(); }
   window.resizeShip?.(); renderAll();
 }
-const ROT = () => S.view ? { pmin:-1.45, pmax:1.45, dmin:3, dmax:45 } : { pmin:-.25, pmax:1.1, dmin:8, dmax:26 };
+const ROT = () => S.view ? { pmin:-1.45, pmax:1.45, dmin:3, dmax:45 } : { pmin:-.25, pmax:1.1, dmin:8, dmax:34 };
 const clampRot = () => { const r = ROT(); S.rot.pitch = Math.max(r.pmin, Math.min(r.pmax, S.rot.pitch)); S.rot.d = Math.max(r.dmin, Math.min(r.dmax, S.rot.d)); };
 
 /* ---------- Body selector ---------- */
@@ -1001,7 +1366,8 @@ function renderPicker(){
           <div><span>INTEGRITY</span><b>${fmt(b.integrity)}</b></div>
           <div><span>SHIELD POWER</span><b>${fmt(b.shield)}</b></div>
           <div><span>GENERATOR POWER</span><b>${b.generator}</b></div>
-          <div><span>HEATSINK POWER</span><b>${b.heatsink}</b></div>
+          <div><span>HEAT CAPACITY</span><b>${b.heatCap}</b></div>
+          <div><span>COOLING</span><b>${b.heatCool}/s</b></div>
           <div><span>BOOST CHARGE</span><b>${b.boost}</b></div>
           <div><span>VALUE</span><b>${fmt(b.value||0)}</b></div>
         </div></div>
@@ -1014,7 +1380,12 @@ function renderPicker(){
 
 /* ---------- hold-to-confirm (leave / remove all) ---------- */
 const HOLD_MS = 900, holds = {};
-const holdEls = { leave:'#hLeave', all:'#hAll' };
+const holdEls = { leave:'#hLeave', all:'#hAll', unq:'#hUnq' };
+// a hold that is released early counts as a tap: X in the socket list = tap sorts, hold unequips
+function holdRelease(id, tapAct){
+  const h = holds[id], tap = h && !h.done && performance.now()-h.t0 < 350;
+  holdEnd(id); if(tap && tapAct) act(tapAct);
+}
 function holdStart(id){
   if(holds[id]) return;
   holds[id] = { t0: performance.now(), done:false };
@@ -1033,6 +1404,7 @@ function holdEnd(id){
 function holdDone(id){
   const el = $(holdEls[id]); if(el) el.style.setProperty('--p',0);
   if(id==='all') removeAll();
+  if(id==='unq') unequip(S.sel);
   if(id==='leave') $('#leave-ov').classList.add('show');
   setTimeout(()=>delete holds[id],250);
 }
@@ -1046,7 +1418,7 @@ stage.addEventListener('pointermove',e=>{
   const hc = row?.dataset.item || null, hr = un?.dataset.unq || null;
   let hs = sl?.dataset.slot || null;
   if(S.view) return;
-  if(!drag && e.target.closest?.('#shipbox')){ hs = pickSlot(e); setShipCursor(hs?'pointer':''); }
+  if(!drag && e.target.closest?.('#shipbox') && !e.target.closest?.('.lab3d')){ hs = pickSlot(e); setShipCursor(hs?'pointer':''); }
   const bcd = e.target.closest?.('[data-bcard]');
   if(S.picker && bcd && +bcd.dataset.bcard!==S.pickIdx){ S.pickIdx = +bcd.dataset.bcard; renderAll(); return; }
   if(S.picker) return;
@@ -1060,6 +1432,10 @@ stage.addEventListener('click',e=>{
   const t = e.target;
   if(t.closest('#leave-ov')){ $('#leave-ov').classList.remove('show'); return; }
   if(t.closest('#viewexit')){ setView(false); return; }
+  if(S.intro){ if(t.closest('[data-intro-close]') || !t.closest('.in-box')) closeIntro(); return; }
+  if(t.closest('[data-guide]')){ openIntro(); return; }
+  if(flag('slideCargo') && S.focus==='cargo' && !t.closest('#cargoPanel') && !t.closest('#bottom')){ S.focus='slots'; renderAll(); return; }
+  const lm = t.closest('[data-lmode]'); if(lm){ S.focus = 'slots'; S.listMode = lm.dataset.lmode; renderAll(); return; }
   if(S.view) return;
   if(t.closest('#dbgRandom')){ randomBuild(); return; }
   if(t.closest('#pill')){ S.inputPref = { gamepad:'keyboard', keyboard:'auto', auto:'gamepad' }[S.inputPref]; renderTop(); renderAll(); return; }
@@ -1069,8 +1445,9 @@ stage.addEventListener('click',e=>{
   if(t.closest('[data-bpick]')){ S.focus='body'; openPicker(); return; }
   const un = t.closest('[data-unq]'); if(un){ unequip(un.dataset.unq); return; }
   if(t.closest('[data-sort]')){ cycleSort(); return; }
+  const lb = t.closest('.lab3d'); if(lb){ selectSlot(lb.dataset.slot); S.focus='slots'; renderAll(); return; }
   if(t.closest('#shipbox')){ const id = pickSlot(e); if(id){ selectSlot(id); S.focus='slots'; renderAll(); } return; }
-  const sl = t.closest('[data-slot]'); if(sl){ selectSlot(sl.dataset.slot); S.focus='slots'; renderAll(); return; }
+  const sl = t.closest('[data-slot]'); if(sl){ selectSlot(sl.dataset.slot); S.focus='slots'; if(flag('slideCargo') && !t.closest('#shipbox')) act('a'); else renderAll(); return; }
   const row = t.closest('.cg-row'); if(row){ S.focus='cargo'; S.cargoIdx=+row.dataset.i; equip(row.dataset.item); return; }
   const tab = t.closest('[data-tab]'); if(tab){ S.tab = tab.dataset.tab; S.cargoIdx = 0; renderAll(); return; }
   const h = t.closest('[data-act]'); if(h && h.dataset.act!=='none' && !h.classList.contains('off')){
@@ -1080,7 +1457,7 @@ stage.addEventListener('click',e=>{
 stage.addEventListener('pointerdown',e=>{
   const h = e.target.closest('[data-hold]'); if(h) holdStart(h.dataset.hold);
 });
-addEventListener('pointerup',()=>{ holdEnd('all'); holdEnd('leave'); });
+addEventListener('pointerup',()=>{ holdEnd('all'); holdEnd('leave'); holdRelease('unq','sort'); });
 
 /* ship: drag = orbit, wheel = zoom, dblclick = reset.
    View mode also pans: right / middle drag, or shift + drag */
@@ -1110,10 +1487,15 @@ addEventListener('keydown',e=>{
   if(e.repeat && !['ArrowUp','ArrowDown','w','s'].includes(e.key)) return;
   if(S.inputPref==='auto' && S.device!=='keyboard'){ S.device='keyboard'; renderTop(); renderBottom(); }
   const k = e.key;
+  if(S.intro){ if(['Enter',' ','Escape','Backspace'].includes(k)){ e.preventDefault(); closeIntro(); } return; }
+  if((e.ctrlKey||e.metaKey) && !S.view && (k==='z'||k==='Z'||k==='y'||k==='Y')){ e.preventDefault(); act(k.toLowerCase()==='y' || e.shiftKey ? 'redo' : 'undo'); return; }
+  if((k==='h'||k==='H') && !S.view){ e.preventDefault(); openIntro(); return; }
   if(k==='v'||k==='V'){ e.preventDefault(); setView(!S.view); return; }
   if(S.view){ if(k==='Escape'||k==='Backspace'){ e.preventDefault(); setView(false); } return; }
   const map = { ArrowUp:'up', w:'up', ArrowDown:'down', s:'down', Enter:'a', ' ':'a', Backspace:'b', ArrowLeft:'left', ArrowRight:'right',
-                Delete:'x', x:'x', o:'sort', O:'sort', Tab: e.shiftKey?'catPrev':'catNext' };
+                Delete:'x', x:'x', X:'x', o:'sort', O:'sort', Tab: e.shiftKey?'catPrev':'catNext' };
+  // X in the socket list: tap = sort, hold = unequip (Delete still unequips at once)
+  if((k==='x'||k==='X') && S.focus==='slots' && !S.picker && !S.intro && flag('listModes')){ e.preventDefault(); holdStart('unq'); return; }
   if(map[k]){ e.preventDefault(); act(map[k]); return; }
   if(k==='r'||k==='R'){ holdStart('all'); }
   if(k==='Escape' && S.picker){ e.preventDefault(); closePicker(); return; }
@@ -1121,6 +1503,7 @@ addEventListener('keydown',e=>{
 });
 addEventListener('keyup',e=>{
   if(e.key==='r'||e.key==='R') holdEnd('all');
+  if(e.key==='x'||e.key==='X') holdRelease('unq','sort');
   if(e.key==='Escape') holdEnd('leave');
 });
 
@@ -1133,17 +1516,23 @@ function pollPad(){
   if(pad){
     const b = i => !!pad.buttons[i]?.pressed;
     const now = performance.now();
-    const cur = { up:b(12)||pad.axes[1]<-.6, down:b(13)||pad.axes[1]>.6, left:b(14), right:b(15), a:b(0), b:b(1), x:b(2), y:b(3), lt:b(6), rt:b(7), lb:b(4), rb:b(5), start:b(9), view:b(8) };
+    const cur = { up:b(12)||pad.axes[1]<-.6, down:b(13)||pad.axes[1]>.6, left:b(14), right:b(15), a:b(0), b:b(1), x:b(2), y:b(3), lt:b(6), rt:b(7), lb:b(4), rb:b(5), start:b(9), view:b(8), l3:b(10), r3:b(11) };
     for(const k of Object.keys(cur)){
       const edge = cur[k] && !gpPrev[k];
       if(edge){
         gpRepeat[k] = now+380;
         if(S.inputPref==='auto' && S.device!=='gamepad'){ S.device='gamepad'; renderTop(); renderBottom(); }
         if(S.view){ if(k==='b'||k==='view') setView(false); gpPrev[k]=cur[k]; continue; }
-        ({ view:()=>setView(true), up:()=>act('up'), down:()=>act('down'), left:()=>act('left'), right:()=>act('right'), a:()=>act('a'), b:()=>act('b'), x:()=>act(S.focus==='cargo' && flag('keyStats') ? 'sort' : 'x'),
-           lt:()=>act('catPrev'), rt:()=>act('catNext'), y:()=>holdStart('all'), start:()=>holdStart('leave') })[k]?.();
+        if(S.intro){ if(k==='a'||k==='b') closeIntro(); gpPrev[k]=cur[k]; continue; }
+        ({ view:()=>setView(true), up:()=>act('up'), down:()=>act('down'), left:()=>act('left'), right:()=>act('right'), a:()=>act('a'), b:()=>act('b'), x:()=>S.focus==='slots' && flag('listModes') ? holdStart('unq') : act(S.focus==='cargo' && flag('keyStats') ? 'sort' : 'x'),
+           lt:()=>act('catPrev'), rt:()=>act('catNext'), y:()=>holdStart('all'), start:()=>holdStart('leave'),
+           l3:()=>act('undo'), r3:()=>act('redo') })[k]?.();
       }else if(cur[k] && (k==='up'||k==='down') && now>gpRepeat[k]){ gpRepeat[k]=now+90; act(k); }
-      if(!cur[k] && gpPrev[k]){ if(k==='y') holdEnd('all'); if(k==='start') holdEnd('leave'); }
+      if(!cur[k] && gpPrev[k]){
+        if(k==='y') holdEnd('all');
+        if(k==='x') holdRelease('unq','sort');
+        if(k==='start'){ const h = holds.leave, tap = h && !h.done && performance.now()-h.t0 < 350; holdEnd('leave'); if(tap) act('guide'); }   // short press = guide, hold = leave
+      }
       gpPrev[k]=cur[k];
     }
     const rx = pad.axes[2]||0, ry = pad.axes[3]||0;
@@ -1165,11 +1554,20 @@ addEventListener('gamepadconnected',()=>toast('GAMEPAD CONNECTED','info'));
 function fit(){ const s=Math.min(innerWidth/1920,innerHeight/1080); S.scale=s; stage.style.transform=`translate(-50%,-50%) scale(${s})`; window.resizeShip?.(); }
 addEventListener('resize',fit); fit();
 
+const bodyQuality = b => .5 * (b.integLv||0) / 7 + .5 * bestBuild('value', b) / gameMax('value');
+
 function boot(){
+  // Bodies ordered by intrinsic quality, worst to best, so ‹ › walk a progression ladder:
+  // quality = ½ · integrated level / 7  +  ½ · best value the hull can reach / best value in the game.
+  // Hulls mix: a rare variant of a weak hull sits above the poor variant of a stronger one.
+  // Custom .glb bodies are appended later, at the end.
+  BODY_LIST.sort((a,b) => bodyQuality(BODIES[a]) - bodyQuality(BODIES[b]));
   loadLocal(); loadFlags(); applyFlags();
   Object.assign(S.rot, homeRot());
   $('#build').textContent = `v${APP_VERSION}`;
   renderTop(); initShip(); renderAll(); requestAnimationFrame(pollPad);
+  let seen = false; try{ seen = !!localStorage.getItem(INTRO_KEY); }catch(e){}
+  if(!seen) openIntro();
   fetch('../../version.json',{cache:'no-store'}).then(r=>r.ok?r.json():Promise.reject()).then(v=>{
     $('#build').title = `build ${v.version} · ${v.sha} · ${v.date}`;   // CI details only on hover
   }).catch(()=>{});
