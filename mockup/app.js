@@ -286,6 +286,7 @@ const FLAGS = {
   blockedReason:{ since:'5.0', label:'Why it won\'t fit', desc:'NO POWER (+n over) / CARGO FULL always shown on rows that cannot be mounted', on:true },
   hideUndo:     { since:'5.0', label:'Hide undo / redo', desc:'Hides undo / redo (L3 / R3, Ctrl+Z / Ctrl+Y) and Reset build on the Body row (X). Turn off to use them', on:true },
   intro:        { since:'5.0', label:'First-time guide', desc:'Short how-it-works screen on first open; reopen from GUIDE in the bottom bar (short press Start, or H)', on:true },
+  socketLinks:  { since:'6.0', label:'Socket link lines', desc:'Every socket of the 3D model is joined by a line to its row in the socket list (selected: orange, hovered: white)', on:true },
   socketLabels: { since:'5.0', label:'3D socket labels', desc:'Every mounted part and free socket is labelled in the 3D view, linked to the list on hover / click', on:true },
   compactCard:  { since:'5.0', label:'Compact info card', desc:'Narrower info card anchored at the bottom, stats in two columns with short labels', on:true },
   stackBadge:   { since:'5.0', label:'Stack count on icon', desc:'Cargo quantity shown as a small count on the icon corner, not among the stats', on:true },

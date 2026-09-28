@@ -763,6 +763,13 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .ovc .cv b .bad{color:var(--bad)}
 .ovgrid.c5{grid-template-columns:repeat(5,1fr);gap:6px 2px}
 .ovgrid.c4{grid-template-columns:repeat(4,1fr);gap:6px 2px}
+/* link lines from the 3D sockets to the socket list */
+#links{position:absolute;left:0;top:0;width:1920px;height:1080px;pointer-events:none;z-index:2;overflow:visible}
+#links path{fill:none;stroke:rgba(190,200,210,.3);stroke-width:1.5;stroke-linejoin:round}
+#links circle{fill:rgba(190,200,210,.55)}
+#links path.hov{stroke:#fff;stroke-width:2}#links circle.hov{fill:#fff}
+#links path.sel{stroke:var(--accent);stroke-width:2.5}#links circle.sel{fill:var(--accent)}
+#links .off{display:none}
 /* an unknown ship (only its slot in the list is known): empty 3D scene, no labels, no details card */
 #stage.body-unknown #labels3d,#stage.body-unknown .tag3d{display:none!important}
 #stage.body-unknown #card{display:none}
@@ -831,6 +838,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
   <div id="shipbox"><div id="labels3d"></div><div class="tag3d" id="tagSel"></div><div class="tag3d hv" id="tagHov"></div>
     <div id="viewui"><div class="vhint">LEFT DRAG · ROTATE &nbsp;&nbsp; RIGHT DRAG / SHIFT+DRAG · PAN &nbsp;&nbsp; WHEEL · ZOOM &nbsp;&nbsp; DOUBLE CLICK · RESET</div>
       <button id="viewexit">EXIT VIEW MODE <i class="key">Esc</i></button></div></div>
+  <svg id="links" viewBox="0 0 1920 1080" width="1920" height="1080"></svg>   <!-- lines from the 3D sockets to their rows in the list -->
   <div id="card"></div>   <!-- module details: right edge of the screen -->
   <div id="picker"></div>
   <div id="intro"></div>

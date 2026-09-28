@@ -265,8 +265,8 @@ function clearDyn(){
 function renderShip(){
   if(!V.ready) return;
   clearDyn();
-  V.shipRoot.visible = !BODY.unknown;   // a locked ship leaves the 3D scene empty (just the dock)
-  if(BODY.unknown) return;
+  V.shipRoot.visible = !BODY.unknown;   // an unknown ship leaves the 3D scene empty (just the dock)
+  if(BODY.unknown){ V.links = []; const lk = $('#links'); if(lk) lk.innerHTML = ''; return; }
   const withPv = PV && PV.to;
   const att = withPv ? PV.att : S.att;
   const disp = withPv ? layout(PV.att) : LY;
@@ -340,7 +340,7 @@ function renderShip(){
   // with the socket labels on, hover highlights the small label instead of opening a second big tag
   const labelsOn = !S.view && typeof flag==='function' && flag('socketLabels');
   fill($('#tagHov'), !labelsOn && S.hoverSlot && S.hoverSlot!==S.sel ? S.hoverSlot : null);
-  buildLabels(disp, att);
+  buildLabels(disp, att); buildLinks(disp);
 }
 
 /* ---------- "socketLabels" experiment: a small label on every mounted part and free socket ----------
@@ -398,6 +398,66 @@ function placeLabels(){
   }
 }
 
+/* ---------- link lines: every socket of the 3D model joined to its row in the socket list ----------
+   An SVG overlay over the whole stage (#links). Built with renderShip (one path + one dot per socket), placed every
+   frame: from the right edge of the row, a short horizontal stub, then a straight line to the socket in the 3D view.
+   Hidden when the socket is behind the hull (raycast every 4th frame) or its row is scrolled out of the list;
+   the selected socket is drawn strong (orange), the hovered one white, the others faint. While the cargo is open
+   only the selected one stays (the list is under the cargo panel). */
+V.links = [];
+function buildLinks(disp){
+  const svg = $('#links'); if(!svg) return;
+  V.links = [];
+  if(S.view || typeof flag!=='function' || !flag('socketLinks')){ svg.innerHTML = ''; return; }
+  let html = '';
+  for(const s of disp.list) html += `<path data-l="${s.id}"/><circle data-c="${s.id}" r="4.5"/>`;
+  svg.innerHTML = html;
+  V.links = disp.list.map(s => ({ id:s.id, row:document.querySelector(`#left [data-slot="${s.id}"]`),
+    path:svg.querySelector(`[data-l="${s.id}"]`), dot:svg.querySelector(`[data-c="${s.id}"]`), occ:false }));
+  V.linkTick = 0;
+}
+// sci-fi wiring: horizontal out of the row, a 45° chamfer, a vertical run, a 45° chamfer, horizontal into the socket
+function linkPath(x0, y0, x1, y1, shift){
+  const dy = y1 - y0, sy = dy < 0 ? -1 : 1, ay = Math.abs(dy);
+  const xm = x0 + Math.max(28, Math.min(140, (x1 - x0)*.4)) + shift;          // where the vertical run sits
+  const c = Math.max(0, Math.min(16, ay/2, x1 - xm));                          // chamfer size
+  const f = n => n.toFixed(1);
+  if(ay < 1 || c < 1) return `M${f(x0)} ${f(y0)}H${f(x1)}${ay < 1 ? '' : `V${f(y1)}`}`;
+  return `M${f(x0)} ${f(y0)}H${f(xm - c)}L${f(xm)} ${f(y0 + sy*c)}V${f(y1 - sy*c)}L${f(xm + c)} ${f(y1)}H${f(x1)}`;
+}
+function placeLinks(){
+  if(!V.links.length) return;
+  const sr = $('#stage').getBoundingClientRect(), k = S.scale || 1, box = $('#shipbox');
+  const list = $('#left .lp-body')?.getBoundingClientRect();
+  const cam = V.camera.position, occTick = (V.linkTick = (V.linkTick+1) % 4) === 0;
+  for(const L of V.links){
+    const an = V.anchor[L.id], sel = S.sel===L.id, hov = S.hoverSlot===L.id;
+    if(!sel && !hov){ L.path.setAttribute('class','off'); L.dot.setAttribute('class','off'); continue; }   // only the selected and the hovered socket are linked
+    let show = !!an && !!L.row && !!list && (S.focus!=='cargo' || sel);
+    let r = null;
+    if(show){ r = L.row.getBoundingClientRect(); show = r.height > 0 && r.top >= list.top - 1 && r.bottom <= list.bottom + 1; }
+    if(show){
+      an.getWorldPosition(V.tmp);
+      if(occTick){
+        const dir = V.tmp.clone().sub(cam), dist = dir.length();
+        V.raycaster.set(cam, dir.normalize()); V.raycaster.far = dist - .3;
+        L.occ = V.raycaster.intersectObject(V.hull, true).length > 0;
+        V.raycaster.far = Infinity;
+      }
+      const p = V.tmp.clone().project(V.camera);
+      show = (!L.occ || sel || hov) && p.z <= 1;   // the selected / hovered socket is always linked, even on the far side of the hull
+      if(show){
+        const x1 = box.offsetLeft + (p.x*.5+.5)*SHIP_W, y1 = box.offsetTop + (-p.y*.5+.5)*SHIP_H;
+        const x0 = (r.right - sr.left)/k, y0 = (r.top + r.height/2 - sr.top)/k;
+        L.path.setAttribute('d', linkPath(x0, y0, x1, y1, hov && !sel ? 16 : 0));
+        L.dot.setAttribute('cx', x1.toFixed(1)); L.dot.setAttribute('cy', y1.toFixed(1));
+      }
+    }
+    const cls = show ? (sel ? 'sel' : hov ? 'hov' : '') : 'off';
+    L.path.setAttribute('class', cls); L.dot.setAttribute('class', cls);
+  }
+}
+
 function placeTag(el){
   const id = el.dataset.slot; if(!id || el.style.display==='none') return;
   const an = V.anchor[id]; if(!an){ el.style.visibility='hidden'; return; }
@@ -426,7 +486,7 @@ function animateShip(now){
   }
   for(const id in V.modG) V.modG[id].scale.setScalar(MOD_SCALE[V.disp.byId[id].size] * popOf(id));
   V.flames.forEach((f,i) => f.scale.set(1,.75+.25*Math.sin(t*38+i),1));
-  placeTag($('#tagSel')); placeTag($('#tagHov')); placeLabels();
+  placeTag($('#tagSel')); placeTag($('#tagHov')); placeLabels(); placeLinks();
   V.renderer.render(V.scene, V.camera);
 }
 
