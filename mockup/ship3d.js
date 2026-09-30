@@ -144,7 +144,7 @@ function initShip(){
   box.insertBefore(renderer.domElement, box.firstChild);
   V.renderer = renderer;
   const scene = V.scene = new THREE.Scene();
-  const camera = V.camera = new THREE.PerspectiveCamera(36, SHIP_W/SHIP_H, .1, 100);
+  const camera = V.camera = new THREE.PerspectiveCamera(40, SHIP_W/SHIP_H, .1, 100);
 
   scene.add(new THREE.AmbientLight(0x8a96aa, .7));
   scene.add(new THREE.HemisphereLight(0xaac4ff, 0x2a1a12, .6));
@@ -333,7 +333,7 @@ function renderShip(){
     if(!s){ el.style.display='none'; el.dataset.slot=''; return; }
     const at = att[id], it = at ? ITEM(at.id) : null;
     el.dataset.slot = id;
-    el.innerHTML = `<small>${SIZE[s.size].label} SOCKET</small><b>${it ? rarDot(it) + it.name.toUpperCase() : 'EMPTY'}</b>`;
+    el.innerHTML = `<b>${it ? rarDot(it) + it.name.toUpperCase() : 'EMPTY'}</b>`;
     el.style.display = 'block';
   };
   fill($('#tagSel'), disp.byId[S.sel]?.pylon ? null : S.sel);   // a selected arm shows only its outline

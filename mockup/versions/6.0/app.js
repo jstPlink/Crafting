@@ -268,7 +268,7 @@ const S = {
   scale: 1,
   rot: { yaw:.75, pitch:.34, d:13.2 },
 };
-const homeRot = () => ({ yaw:.75, pitch:.34, d:BODY.cam*1.3 });   // zoomed out: arms and modules stay in frame
+const homeRot = () => ({ yaw:.75, pitch:.34, d:BODY.cam });   // camera close to the ship
 
 /* ---------- experiments: features switchable from the version menu (switcher.js) ----------
    Each flag guards ONE UX change, so it can be compared with the old behaviour.
@@ -276,7 +276,7 @@ const homeRot = () => ({ yaw:.75, pitch:.34, d:BODY.cam*1.3 });   // zoomed out:
 // promoted to standard behaviour: no longer switchable, always on
 const ALWAYS_ON = { bigText:true, overview:true, slideCargo:true, bodyButton:true };
 // switches phrased as "Hide …": the underlying feature is the opposite of the switch
-const HIDDEN_BY = { undoRedo:'hideUndo', shipQuality:'hideQuality' };
+const HIDDEN_BY = { undoRedo:'hideUndo', shipQuality:'hideQuality', typeShape:'hideTypeShape', socketLabels:'hideSocketLabels' };
 // `since` = version that added the feature (shown next to it in the features window of the version menu)
 const FLAGS = {
   keyStats:     { since:'4.3', label:'Key stat on rows', desc:'DPS / speed on every part, delta vs mounted, BEST tag, cargo sorting', on:true },
@@ -292,6 +292,8 @@ const FLAGS = {
   stackBadge:   { since:'5.0', label:'Stack count on icon', desc:'Cargo quantity shown as a small count on the icon corner, not among the stats', on:true },
   maxRatings:   { since:'5.0', label:'Rated vs max',     desc:'Primary / secondary DPS, ship value and max speed coloured by how close they are to the best build in the game', on:true },
   hideQuality:  { since:'5.0', label:'Hide loadout quality', desc:'Hides the LOADOUT QUALITY block (average LV + one rarity tile per mounted module). Turn off to show it', on:true },
+  hideTypeShape:{ since:'7.0', label:'Hide type-by-shape', desc:'Keeps every row icon a plain square, regardless of module type. Turn off to bring back the pointed / round / notched shapes', on:true },
+  hideSocketLabels:{ since:'7.0', label:'Hide 3D socket labels', desc:'No per-part tags floating in the 3D view. Turn off to bring them back', on:true },
   listModes:    { since:'5.0', label:'Socket list views', desc:'Left list as tree, filled / empty, by type, by rarity or by power (tabs, or X tap like the cargo); hold X to unequip', on:true },
 };
 // saves and switches are stored under the version key; 5.0 was published as 0.5.0 and keeps that key
@@ -375,7 +377,6 @@ function sg(n, px=14, mode='solid'){
   const body = shape==='tri' ? '<path d="M8 2L14.5 13.5H1.5Z"/>' : shape==='sq' ? '<rect x="2.5" y="2.5" width="11" height="11"/>' : '<circle cx="8" cy="8" r="6"/>';
   return `<svg class="sg" width="${px}" height="${px}" viewBox="0 0 16 16" fill="${mode==='solid'?color:'none'}" stroke="${color}" stroke-width="1.8"${mode==='dash'?' stroke-dasharray="3 2"':''}>${body}</svg>`;
 }
-const outGlyphs = p => `<span class="outs">${outputsOf(p).map(n=>sg(n,13)).join('')}</span>`;
 
 const STAT_META = {
   // modules
@@ -596,7 +597,11 @@ function computePreview(){
   if(S.hoverRemove && LY.byId[S.hoverRemove] && S.att[S.hoverRemove]) return makePreview(S.hoverRemove, null);
   const list = cargoList();
   const id = S.hoverCargo ?? (S.focus==='cargo' ? list[S.cargoIdx]?.id : null);
-  return id ? makePreview(S.sel, id) : null;
+  if(id) return makePreview(S.sel, id);
+  // hovering a mounted module (its row in the list, or the part itself in the 3D view), outside
+  // the cargo picker: it can be removed, so preview that removal in the info panel below
+  if(S.focus!=='cargo' && S.hoverSlot && S.att[S.hoverSlot]?.t==='mod') return makePreview(S.hoverSlot, null);
+  return null;
 }
 const hasRoom = (sid, id) => cargoSlots(attachTo(S.att, S.cargo, sid, id).cargo) <= CARGO_SLOTS;
 const wouldFit = (sid, id) => calc(attachTo(S.att, S.cargo, sid, id).att).power <= BODY.generator;
@@ -672,14 +677,10 @@ function leftRow(s, up=1, statKey=null){
   const icon = !it ? sg(s.size,20,'dash') : ico(a.t==='pyl' ? 'pylon' : it.fam);
   const full = it ? it.name : flag('overview') ? 'Empty' : '';
   const name = full;
-  const right = it && a.t==='pyl' ? outGlyphs(it) : '';
   const rc = it && a.t==='mod' ? rarCol(it) : '';
-  const k = it && a.t==='mod' && (statKey || flag('keyStats')) ? (statKey || KEYSTAT[it.kind]) : null;
-  const ks = k ? `<span class="ks" title="${STAT_META[k].label}: ${fmtStat(k,it[k])}">${ico(STAT_META[k].icon)}${it[k]}</span>` : '';
   return `<div class="${cls}${rc?' rar':''}" data-slot="${s.id}" style="--d:${s.depth};--up:${up}${rc?`;--rc:${rc}`:''}">
-    <div class="ic">${icon}</div>
-    <div class="nm" title="${full}">${rc && flag('rarityTag') ? rarTag(it) : ''}<span class="nmx"><span class="nmt">${name}</span></span></div>
-    ${ks}${it && a.t==='mod' && !k ? sg(s.size,12) : ''}${right}
+    <div class="ic">${icon}${rc && flag('rarityTag') ? rarTag(it) : ''}</div>
+    <div class="nm" title="${full}"><span class="nmx"><span class="nmt">${name}</span></span></div>
     ${isSel?`<span class="kh" style="${S.focus==='slots'?'':'visibility:hidden'}">${glyph('A')}</span>`:''}
     ${it && holdsParts(s.id) ? `<span class="lockq" title="Holds ${partsOn(s.id)} part${partsOn(s.id)>1?'s':''}: only end parts can be changed, remove them first">${ico('lock')}</span>`
       : it ? `<button class="unq" data-unq="${s.id}" title="Unequip">${ico('x')}</button>` : ''}
@@ -688,28 +689,31 @@ function leftRow(s, up=1, statKey=null){
 
 // integrated module row: same look as a mounted module, but locked and not part of the navigation
 function integRow(m){
-  const k = KEYSTAT[m.kind];
   return `<div class="slot ${KIND[m.kind].cls} rar integ" style="--d:0;--rc:${rarCol(m)}" title="${m.name} · integrated in the Body: cannot be changed">
-    <div class="ic">${ico(m.fam)}</div>
-    <div class="nm">${flag('rarityTag') ? rarTag(m) : ''}<span class="nmx"><span class="nmt">${m.name}</span></span></div>
-    <span class="ks">${ico(STAT_META[k].icon)}${m[k]}</span>
+    <div class="ic">${ico(m.fam)}${flag('rarityTag') ? rarTag(m) : ''}</div>
+    <div class="nm"><span class="nmx"><span class="nmt">${m.name}</span></span></div>
     <span class="lockq">${ico('lock')}</span>
   </div>`;
 }
 
 function renderLeft(){
   const keep = $('#left .lp-body')?.scrollTop || 0;
-  // the Body panel sits above the socket panel: ‹ NAME › and the position of this Body among all the Bodies of the game
-  // LT / RT switch the ship (glyphs at the two ends), only when playing with a gamepad and not while the cargo is open (there they change category)
-  const trig = S.focus!=='cargo' && dev()==='gamepad';
-  $('#shipPanel').innerHTML = `<div class="head bodyhead ${S.focus==='body'?'focus':''}">
-      ${trig ? glyph('LT') : ''}<button class="bsw" data-bstep="-1" title="Previous Body">${S.focus==='body' ? glyph('DL') : '‹'}</button>
+  // the Body panel sits near the top: ‹ NAME › and the position of this Body among all the Bodies of the game.
+  // No dedicated arrow buttons any more: the shortcut glyph itself is the button (mouse-clickable
+  // regardless of device); it shows whichever key actually switches ship in the current focus
+  // (LT/RT in focus 'slots', left/right in focus 'body'), and hides while cargo is open (there
+  // LT/RT means something else: category).
+  const trig = S.focus!=='cargo';
+  const bodyFoc = S.focus==='body';
+  $('#shipPanel').innerHTML = `<div class="head bodyhead ${bodyFoc?'focus':''}">
+      ${trig ? `<button class="bstep" data-bstep="-1" title="Previous ship">${bodyFoc?glyph('DL'):glyph('LT')}</button>` : '<span class="bstep-sp"></span>'}
       <div class="bsw-mid"><span class="bname"><span class="bn-t">${shipName(BODY)}</span></span><small>${BODY_LIST.indexOf(BODY.id)+1} / ${BODIES_IN_GAME}</small></div>
-      <button class="bsw" data-bstep="1" title="Next Body">${S.focus==='body' ? glyph('DR') : '›'}</button>${trig ? glyph('RT') : ''}
+      ${trig ? `<button class="bstep" data-bstep="1" title="Next ship">${bodyFoc?glyph('DR'):glyph('RT')}</button>` : '<span class="bstep-sp"></span>'}
     </div>`;
   marquee('#shipPanel .bname');   // a Body name that does not fit scrolls back and forth
   stage.classList.toggle('body-unknown', !!BODY.unknown);   // an unknown ship: no 3D labels, no details card
-  // the socket panel is only about sockets and mounted modules
+  // the socket panel is only about sockets and mounted modules; it floats over the 3D view
+  // (it no longer shares a column with the ship data). Not collapsible: it's always fully shown.
   let html = `
     <div class="lp-head"><div class="nm">SOCKETS</div>
       ${flag('listModes') && !BODY.unknown ? `<button class="lmcycle" data-lmcycle title="Change the view of the list (tree · filled · type · rarity · power)"><small>VIEW</small>${LIST_LABEL[S.listMode]}${S.focus==='slots' ? glyph('X') : ''}</button>` : ''}
@@ -767,23 +771,30 @@ function renderRight(){
   const fd = isFinite(n.fireTime) && isFinite(t.fireTime) ? n.fireTime - t.fireTime : (n.fireTime===t.fireTime ? 0 : NaN);
   const fdTxt = !fd ? '' : isNaN(fd) ? (isFinite(n.fireTime) ? '−∞' : '+∞') : (fd>0?'+':'−') + Math.abs(fd).toFixed(1) + 's';
   const fdCls = isNaN(fd) ? (isFinite(n.fireTime) ? 'dn' : 'up') : fd>0 ? 'up' : 'dn';
-  const dl = (cls, txt) => txt ? `<span class="sd ${cls}">${txt}</span>` : '';
+  // always render the badge (hidden, not omitted, when there's nothing to show): an omitted element
+  // is shorter than one with the same font/padding as the value next to it, so appearing/disappearing
+  // deltas used to change the row's height. See STAT_META / .sd.off convention used elsewhere.
+  const dl = (cls, txt) => `<span class="sd ${txt?cls:'off'}">${txt||'+0'}</span>`;
   const rated = flag('maxRatings');
 
-  // compact overview in the left column, between the Body switcher and the socket list: stats side by side (label above, change on the left and value on the right below it)
+  // ship data column, on the right: 3 groups — value on its own, then defences + power, then damage and speed
   const ov = `<div class="ov">
     <div class="ov-body">
-      <div class="dpsblock">   <!-- row 1: the ship itself: value, power, defences -->
-        <div class="ovgrid c4">
-          ${ovRow('value','SHIP VALUE', fmt(n.value), dl('nt', n.value!==t.value ? sgn(n.value-t.value) : ''), rated ? rate(n.value, gameMax('value')) : null, true)}
-          ${ovRow('power','POWER', `<span class="${over?'bad':''}">${n.power}<small>/ ${BODY.generator}</small></span>`, dl(over ? 'dn' : dcls('power',pd), pd ? sgn(pd) : ''), null, true)}
-          ${lineRow('hull','INTEGRITY',BODY.integrity,0,'', null, true)}
+      <div class="dpsblock">
+        <div class="ovgrid c1">
+          ${ovRow('value','SHIP VALUE', fmt(n.value), dl(dcls('value', n.value-t.value), n.value!==t.value ? sgn(n.value-t.value) : ''), rated ? rate(n.value, gameMax('value')) : null, true)}
+        </div>
+      </div>
+      <div class="dpsblock">
+        <div class="ovgrid c1">
           ${lineRow('shield','SHIELD POWER',BODY.shield,0,'', null, true)}
+          ${lineRow('hull','INTEGRITY',BODY.integrity,0,'', null, true)}
+          ${ovRow('power','POWER', `<span class="${over?'bad':''}">${n.power}<small>/ ${BODY.generator}</small></span>`, dl(over ? 'dn' : dcls('power',pd), pd ? sgn(pd) : ''), null, true)}
         </div>
         ${flag('shipQuality') ? qualityRow(t, n) : ''}
       </div>
-      <div class="dpsblock">   <!-- row 2: attack and speed -->
-        <div class="ovgrid c5">
+      <div class="dpsblock">   <!-- damage and ship speed -->
+        <div class="ovgrid c1">
           ${ovRow('heat','FIRE TIME', secs(n.fireTime), dl(fdCls, fdTxt), null, true)}
           ${dpsRow('PRIMARY DPS','priDps',t,n,true)}${dpsRow('SECONDARY DPS','secDps',t,n,true)}
           ${lineRow('speed','MAX SPEED',n.maxSpeed,n.maxSpeed-t.maxSpeed,'maxSpeed', rated ? rate(n.maxSpeed, gameMax('speed')) : null, true)}
@@ -823,9 +834,8 @@ function renderRight(){
       sub = `<div class="sub">${flag('stackBadge') ? '' : `<span class="q">×${S.cargo[m.id]}</span>`}<span>${byPow?'POWER':k==='dps'?'DPS':'SPEED'} <b>${m[k]}</b></span>${dh}${best}</div>`;
     }
     return `<div class="cg-row ${pyl?'pyl':KIND[m.kind].cls+' rar'} ${two?'two':''} ${focus?'sel':''} ${hov?'hov':''} ${fits?'':'nopow'}" data-item="${m.id}" data-i="${i}"${pyl?'':` style="--rc:${rarCol(m)}"`}>
-      <div class="ic">${ico(pyl?'pylon':m.fam)}${!pyl && flag('stackBadge') ? `<span class="qty" title="In cargo">${S.cargo[m.id]}</span>` : ''}</div>
-      <div class="mid"><div class="nm">${!pyl && flag('rarityTag') ? rarTag(m) : ''}<span class="nmt">${m.name}</span>${pyl||two||flag('stackBadge')?'':`<small>×${S.cargo[m.id]}</small>`}</div>${sub}</div>
-      ${pyl?outGlyphs(m):two?'':`<span class="outs">${sg(m.size,14)}</span>`}
+      <div class="ic">${ico(pyl?'pylon':m.fam)}${!pyl && flag('rarityTag') ? rarTag(m) : ''}${!pyl && flag('stackBadge') ? `<span class="qty" title="In cargo">${S.cargo[m.id]}</span>` : ''}</div>
+      <div class="mid"><div class="nm"><span class="nmt">${m.name}</span>${pyl||two||flag('stackBadge')?'':`<small>×${S.cargo[m.id]}</small>`}</div>${sub}</div>
       <div class="act">${why ? `<span class="why" title="${!room?'No free cargo slot for the parts that would come back':'Power needed above the Body generator'}">${why}</span>` : focus||hov?label:''}${focus?glyph('A'):''}</div>
     </div>`;
   }).join('') || (holdsParts(S.sel) ? `<div class="cg-empty locked">${ico('lock')}<br>THIS ARM HOLDS ${partsOn(S.sel)} PART${partsOn(S.sel)>1?'S':''}<br><span class="cg-sub">Only end parts can be replaced or removed: remove the parts on this arm first</span></div>`
@@ -844,10 +854,8 @@ function renderRight(){
     $('#right').innerHTML = ov;
     $('#cargoPanel').innerHTML = cg;
     $('#cargoPanel').classList.toggle('open', S.focus==='cargo');
-    // the cargo slides over the socket list only: the Body switcher and the overview (with the preview deltas) stay visible above it
-    const L = $('#left'), cp = $('#cargoPanel');
-    // #left's offset parent is #lcol (#lrow is not positioned); the card next to it stays visible
-    cp.style.top = ($('#lcol').offsetTop + L.offsetTop) + 'px'; cp.style.height = L.offsetHeight + 'px'; cp.style.width = L.offsetWidth + 'px';
+    // #cargoPanel sits at the same fixed spot as #left (CSS): it slides over the socket list
+    // whether or not that panel is collapsed, while the Body switcher and overview stay visible at the bottom
   }else{ $('#right').innerHTML = ov + cg; $('#cargoPanel').innerHTML = ''; $('#cargoPanel').classList.remove('open'); }
   const l = $('.cg-list'); if(l) l.scrollTop = keep;
   if(BODY.unknown) for(const c of document.querySelectorAll('#right .ovc')){   // nothing is known about this ship: no figures at all
@@ -931,24 +939,11 @@ const ccell = (icon, label, full, val, old, dl='', dcl='') => `<div class="cst" 
   + `<span class="cv">${old!=null ? `<i>${old}</i><em>→</em>` : ''}<b>${val}</b></span><span class="cd ${dcl}">${dl}</span></div>`;
 const cgrid = cells => `<div class="cgrid">${cells.join('')}</div>`;
 
-// placeholder flavour text, exactly 20 words: 11 for what the family is + 9 for where a part of that rarity comes from
-const DESC_FAM = {
-  gatling: 'A rotary barrel cluster built for sustained fire and steady damage.',
-  laser:   'A focused energy emitter that trades cooling margin for punishing damage.',
-  rocket:  'A rack of guided rockets held back for decisive, heavy strikes.',
-  smatter: 'A short-range launcher that scatters smart matter across nearby hostile targets.',
-  engine:  'A tuned thruster assembly that pushes the whole hull noticeably faster.' };
-const DESC_LV = [ 'Rough and dented, yet trusted by desperate scavenger crews.',
-  'Standard salvage stock, reliable enough for everyday station patrols.',
-  'Well maintained surplus, sold cheaply by retiring fleet quartermasters.',
-  'Precision machined and carefully calibrated by independent yard engineers.',
-  'Military grade hardware, rarely released outside sanctioned fleet armories.',
-  'Prototype design smuggled out of a restricted research foundry.',
-  'Legendary make, whispered about wherever veteran raiders trade stories.' ];
-const modDesc = m => `${DESC_FAM[m.fam]} ${DESC_LV[m.lv-1]}`;
-
 function renderCard(){
-  const sock = selSock(), curA = S.att[S.sel], cur = curA ? ITEM(curA.id) : null, compact = flag('compactCard');
+  // without a preview this is the selected socket; with one (hovering a mounted part to preview
+  // removing it, or a different row's ✕) it's whatever socket PV actually targets
+  const sockId = PV ? PV.sid : S.sel;
+  const sock = LY.byId[sockId] || selSock(), curA = S.att[sockId], cur = curA ? ITEM(curA.id) : null, compact = flag('compactCard');
   const head = title => `<div class="ch">${title}</div>`;   // no socket-size chip: the socket is already selected in the list
   let html;
   if(BODY.unknown){
@@ -964,11 +959,11 @@ function renderCard(){
           ? `<span class="lockline">${ico('lock')} Holds ${partsOn(S.sel)} part${partsOn(S.sel)>1?'s':''} · only end parts can be changed: remove them first</span>`
           : `<span>Select a cargo item to swap this arm</span><span>${glyph('A')}</span>`}</div>`;
     }else{
-      const rows = modKeys(cur).map(k=>`<tr><td>${ico(STAT_META[k].icon)}${STAT_META[k].label}</td><td>${fmtStat(k,cur[k])}</td></tr>`).join('');
-      const body = compact ? cgrid(modKeys(cur).map(k => ccell(ico(STAT_META[k].icon), CARD_SHORT[k], STAT_META[k].label, fmtStat(k,cur[k]))))
-                           : `<table><tr><th>STAT</th><th>INSTALLED</th></tr>${rows}</table>`;
-      html = head(`${rarDot(cur)}${cur.name.toUpperCase()}<span class="fam">${FAMILY[cur.fam].label}</span>`) + `${body}
-        <div class="cf desc"><span>${modDesc(cur)}</span></div>`;
+      // the family ("Gatling", "Laser"…) used to sit in the title; it's a parameter like any other, so it's a row here instead
+      const body = compact
+        ? cgrid([ccell(ico(cur.fam), 'Type', 'Module family', FAMILY[cur.fam].label), ...modKeys(cur).map(k => ccell(ico(STAT_META[k].icon), CARD_SHORT[k], STAT_META[k].label, fmtStat(k,cur[k])))])
+        : `<table><tr><th>STAT</th><th>INSTALLED</th></tr><tr><td>${ico(cur.fam)}Type</td><td>${FAMILY[cur.fam].label}</td></tr>${modKeys(cur).map(k=>`<tr><td>${ico(STAT_META[k].icon)}${STAT_META[k].label}</td><td>${fmtStat(k,cur[k])}</td></tr>`).join('')}</table>`;
+      html = head(`${rarDot(cur)}${cur.name.toUpperCase()}`) + body;
     }
   }else{
     const to = PV.to ? ITEM(PV.to) : null;
@@ -976,7 +971,7 @@ function renderCard(){
     const over = PV.t1.power - BODY.generator;
     const title = to
       ? `<span class="old">${cur?rarDot(cur)+cur.name.toUpperCase():'EMPTY'}</span><span class="arrow">➜</span>${rarDot(to)}${to.name.toUpperCase()}`
-      : `REMOVE <span class="old">${rarDot(cur)}${cur.name.toUpperCase()}</span>`;
+      : `<span class="rm-word">REMOVE</span> <span class="old">${rarDot(cur)}${cur.name.toUpperCase()}</span>`;
     let table = '';
     if(compact && !pylonCase){
       table = cgrid((cur && to && cur.kind!==to.kind ? modKeys(to) : modKeys(cur,to)).map(k => {
@@ -1014,15 +1009,15 @@ function renderCard(){
     }
     const back = PV.ret.filter((id,i)=>!(i===0 && !pylonCase));
     const backTxt = back.length && pylonCase ? `<div class="retline">Returns to cargo: ${PV.ret.map(id=>ITEM(id).name).join(', ')}</div>` : '';
-    const verdict = to?(cur?'READY TO REPLACE':'READY TO EQUIP'):'GOES BACK TO CARGO';
+    const verdict = to ? (cur?'READY TO REPLACE':'READY TO EQUIP') : '';   // removing needs no verdict line: saves space for the parameters
     const foot = !PV.room
       ? `<span>CARGO <b class="no">${CARGO_SLOTS} / ${CARGO_SLOTS}</b></span><span class="no">CARGO FULL · NO ROOM FOR RETURNED MODULES</span>`
       : flag('overview')   // power figures live in the overview: the card only gives the verdict
-      ? (over>0 ? `<span class="no">NOT ENOUGH POWER · NEEDS ${over} MORE</span>` : `<span class="ok">${verdict}</span>`)
+      ? (over>0 ? `<span class="no">NOT ENOUGH POWER · NEEDS ${over} MORE</span>` : (verdict ? `<span class="ok">${verdict}</span>` : ''))
       : over>0
       ? `<span>POWER <b>${T0.power}</b> ➜ <b class="no">${PV.t1.power} / ${BODY.generator}</b></span><span class="no">NOT ENOUGH POWER (${over} OVER)</span>`
-      : `<span>POWER <b>${T0.power}</b> ➜ <b>${PV.t1.power} / ${BODY.generator}</b></span><span class="ok">${verdict}</span>`;
-    html = head(title) + table + backTxt + `<div class="cf">${foot}</div>`;
+      : (verdict ? `<span>POWER <b>${T0.power}</b> ➜ <b>${PV.t1.power} / ${BODY.generator}</b></span><span class="ok">${verdict}</span>` : '');
+    html = head(title) + table + backTxt + (foot ? `<div class="cf">${foot}</div>` : '');
   }
   $('#card').innerHTML = html;
 }
@@ -1465,7 +1460,9 @@ stage.addEventListener('click',e=>{
   if(t.closest('#pill')){ S.inputPref = { gamepad:'keyboard', keyboard:'auto', auto:'gamepad' }[S.inputPref]; renderTop(); renderAll(); return; }
   const bc = t.closest('[data-bcard]'); if(bc){ S.pickIdx = +bc.dataset.bcard; confirmPick(); return; }
   if(S.picker){ if(!t.closest('#picker')) closePicker(); return; }
-  const bs = t.closest('[data-bstep]'); if(bs){ S.focus='body'; stepBody(+bs.dataset.bstep); return; }
+  // a plain mouse click just switches ship: it doesn't move keyboard/gamepad focus onto the
+  // switcher (that only happens by navigating there), so no focus outline appears on click
+  const bs = t.closest('[data-bstep]'); if(bs){ stepBody(+bs.dataset.bstep); return; }
   if(t.closest('[data-bpick]')){ S.focus='body'; openPicker(); return; }
   const un = t.closest('[data-unq]'); if(un){ unequip(un.dataset.unq); return; }
   if(t.closest('[data-sort]')){ cycleSort(); return; }
