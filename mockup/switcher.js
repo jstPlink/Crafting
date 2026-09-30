@@ -30,17 +30,31 @@
   const css = document.createElement('style');
   css.textContent = `
     /* the version button: !important because older versions style #build as a tiny grey label */
-    #stage #build,#stage #featbtn{cursor:pointer;pointer-events:auto;font-size:20px!important;font-weight:700;letter-spacing:.08em!important;color:#dfe5ea!important;
+    #stage #build,#stage #featbtn,#stage #rarbtn{cursor:pointer;pointer-events:auto;font-size:20px!important;font-weight:700;letter-spacing:.08em!important;color:#dfe5ea!important;
       padding:7px 16px;background:rgba(10,12,15,.75);border:1px solid #4a4f55}
-    #stage #build::after,#stage #featbtn::after{content:" ▾";color:var(--accent-2)}
-    #stage #build:hover,#stage #build.open,#stage #featbtn:hover,#stage #featbtn.open{border-color:var(--accent-2)}
-    #stage #featbtn{position:absolute;z-index:5;font-family:inherit;line-height:normal}
+    #stage #build::after,#stage #featbtn::after,#stage #rarbtn::after{content:" ▾";color:var(--accent-2)}
+    #stage #build:hover,#stage #build.open,#stage #featbtn:hover,#stage #featbtn.open,#stage #rarbtn:hover,#stage #rarbtn.open{border-color:var(--accent-2)}
+    #stage #featbtn,#stage #rarbtn{position:absolute;z-index:5;font-family:inherit;line-height:normal}
     /* two separate windows, each under its own button */
     .vwinp{position:absolute;top:160px;z-index:60;display:none;max-height:820px;overflow-y:auto;background:#0a0c0f;border:1px solid var(--accent);
       font-size:17px;letter-spacing:.03em;color:#dfe5ea;scrollbar-width:thin;scrollbar-color:#3a3f46 transparent}
     .vwinp.show{display:block}
     #verpanel{right:80px;width:430px}
     #featpanel{width:560px}
+    #rarpanel{width:460px}
+    .vwinp .rrow{display:flex;align-items:center;gap:14px;padding:9px 16px;border-top:1px solid #16181b}
+    .vwinp .rrow b{flex:none;width:52px;text-align:center;font-size:15px;letter-spacing:.06em;padding:2px 0;color:#0a0c0f}
+    .vwinp .rrow input[type=color]{width:64px;height:30px;padding:0;border:1px solid #4a4f55;background:none;cursor:pointer}
+    .vwinp .rrow code{font-size:15px;color:var(--dim)}
+    .vwinp .prow{display:flex;align-items:center;gap:12px;padding:8px 16px;border-top:1px solid #16181b;cursor:pointer}
+    .vwinp .prow:hover{background:#171a1e}.vwinp .prow.cur{background:#211914}
+    .vwinp .prow .pn{flex:1;font-size:17px;font-weight:700;letter-spacing:.05em}
+    .vwinp .pch{display:flex;gap:2px}.vwinp .pch i{width:16px;height:22px}
+    .vwinp .pdel{background:none;border:0;color:#8a939b;font-size:16px;cursor:pointer;padding:2px 6px}.vwinp .pdel:hover{color:#ff6b6b}
+    .vwinp .racts{display:flex;gap:10px;padding:12px 16px;border-top:1px solid #16181b}
+    .vwinp .racts button{flex:1;font-family:inherit;font-size:15px;font-weight:700;letter-spacing:.08em;padding:8px 0;background:#22262b;color:#dfe5ea;border:1px solid #4a4f55;cursor:pointer}
+    .vwinp .racts button:hover{border-color:var(--accent-2)}
+    .vwinp .racts button.pri{background:var(--accent);border-color:var(--accent);color:#fff}
     .vwinp .since{font-size:12px;font-weight:700;letter-spacing:.08em;color:#9aa3ab;border:1px solid #3a3f46;padding:1px 6px;margin-left:8px;vertical-align:3px}
     .vwinp h4{font-size:15px;letter-spacing:.14em;color:var(--dim);padding:12px 16px 6px;font-weight:600}
     .vwinp .vrow{display:flex;align-items:center;gap:12px;padding:9px 16px;border-top:1px solid #16181b;cursor:pointer}
@@ -61,6 +75,10 @@
   const featBtn = ex ? mk('button', 'featbtn') : null;
   const featPanel = ex ? mk('div', 'featpanel', 'vwinp') : null;
   if(featBtn) featBtn.textContent = 'FEATURES';
+  const rar = window.craftingRarity;                      // rarity colours: dropdown next to FEATURES
+  const rarBtn = rar ? mk('button', 'rarbtn') : null;
+  const rarPanel = rar ? mk('div', 'rarpanel', 'vwinp') : null;
+  if(rarBtn) rarBtn.textContent = 'RARITY';
 
   // the FEATURES button sits just left of the version button, same row; its window hangs under it
   function place(){
@@ -69,6 +87,11 @@
     featBtn.style.top = label.offsetTop + 'px';
     featBtn.style.right = (right + label.offsetWidth + 10) + 'px';
     featPanel.style.right = featBtn.style.right;
+    if(rarBtn){
+      rarBtn.style.top = label.offsetTop + 'px';
+      rarBtn.style.right = (right + label.offsetWidth + 10 + featBtn.offsetWidth + 10) + 'px';
+      rarPanel.style.right = rarBtn.style.right;
+    }
   }
 
   function renderVersions(){
@@ -89,6 +112,49 @@
     featPanel.innerHTML = f;
   }
 
+  function renderRarity(msg){
+    const cur = rar.colors(), def = rar.defaults();
+    let h = `<h4>RARITY COLOURS · LV1 → LV7</h4>`;
+    cur.forEach((c, i) => { h += `<div class="rrow"><b style="background:${c}">LV${i+1}</b><input type="color" data-rar="${i+1}" value="${c}"><code>${c}${c !== def[i] ? ' · edited' : ''}</code></div>`; });
+    const pr = rar.presets();
+    h += `<h4>PRESETS</h4>`;
+    for(const [n, cs] of Object.entries(pr)){
+      const on = cs.every((c, i) => c.toLowerCase() === cur[i].toLowerCase());
+      h += `<div class="prow ${on ? 'cur' : ''}" data-preset="${esc(n)}"><span class="pn">${esc(n)}</span><span class="pch">${cs.map(c => `<i style="background:${c}"></i>`).join('')}</span><button class="pdel" data-pdel="${esc(n)}" title="Delete preset">✕</button></div>`;
+    }
+    h += `<div class="racts"><button data-psave>SAVE CURRENT AS PRESET…</button></div>`;
+    h += `<div class="racts"><button data-rreset>RESET</button><button class="pri" data-rsave>SAVE AS DEFAULT</button></div>`;
+    h += `<div class="vfoot">${esc(msg || 'Changes apply live and stay in this browser. SAVE AS DEFAULT writes them into the app code (local dev server only) so everyone who opens it gets them.')}</div>`;
+    rarPanel.innerHTML = h;
+  }
+  if(rarPanel){
+    // colour picker: update live without rebuilding the panel (it would close the native picker)
+    rarPanel.addEventListener('input', e => {
+      const i = e.target.dataset?.rar; if(!i) return;
+      rar.set(+i, e.target.value);
+      const row = e.target.closest('.rrow'); row.querySelector('b').style.background = e.target.value;
+      row.querySelector('code').textContent = e.target.value + (e.target.value !== rar.defaults()[i-1] ? ' · edited' : '');
+    });
+    rarPanel.addEventListener('click', async e => {
+      e.stopPropagation();
+      const pd = e.target.closest('[data-pdel]');
+      if(pd){ rar.deletePreset(pd.dataset.pdel); renderRarity('Preset deleted (SAVE AS DEFAULT makes it permanent).'); return; }
+      const pa = e.target.closest('[data-preset]');
+      if(pa){ rar.applyPreset(pa.dataset.preset); renderRarity('Preset applied.'); return; }
+      if(e.target.closest('[data-psave]')){
+        const n = (prompt('Preset name') || '').trim().slice(0, 24);
+        if(n){ rar.savePreset(n); renderRarity('Preset "' + n + '" saved in this browser (SAVE AS DEFAULT writes it into the app).'); }
+        return;
+      }
+      if(e.target.closest('[data-rreset]')){ rar.reset(); renderRarity('Back to the saved defaults.'); }
+      else if(e.target.closest('[data-rsave]')){
+        try{ await rar.saveDefault(); renderRarity('Saved: these colours are now the app defaults (written to app.js). Commit to keep them.'); }
+        catch(err){ renderRarity('Could not save (' + err.message + '). Saving only works on the local dev server.'); }
+      }
+    });
+    rarPanel.addEventListener('pointerdown', e => e.stopPropagation());
+  }
+
   function go(v){ location.href = root + 'versions/' + v + '/index.html'; }
   for(const p of [verPanel, featPanel]) if(p){
     p.addEventListener('click', e => {
@@ -105,6 +171,7 @@
   const open = which => {
     verPanel.classList.toggle('show', which==='ver'); label.classList.toggle('open', which==='ver');
     if(featPanel){ featPanel.classList.toggle('show', which==='feat'); featBtn.classList.toggle('open', which==='feat'); }
+    if(rarPanel){ rarPanel.classList.toggle('show', which==='rar'); rarBtn.classList.toggle('open', which==='rar'); }
   };
   label.title = 'Versions';
   label.addEventListener('click', e => { e.stopPropagation(); renderVersions(); open(verPanel.classList.contains('show') ? null : 'ver'); });
@@ -113,6 +180,11 @@
     featBtn.addEventListener('click', e => { e.stopPropagation(); place(); renderFeatures(); open(featPanel.classList.contains('show') ? null : 'feat'); });
     featBtn.addEventListener('pointerdown', e => e.stopPropagation());
   }
-  document.addEventListener('click', e => { if(!verPanel.contains(e.target) && !featPanel?.contains(e.target)) open(null); });
+  if(rarBtn){
+    rarBtn.title = 'Rarity colours';
+    rarBtn.addEventListener('click', e => { e.stopPropagation(); place(); renderRarity(); open(rarPanel.classList.contains('show') ? null : 'rar'); });
+    rarBtn.addEventListener('pointerdown', e => e.stopPropagation());
+  }
+  document.addEventListener('click', e => { if(rarPanel?.contains(e.target)) return; if(!verPanel.contains(e.target) && !featPanel?.contains(e.target)) open(null); });
   place(); setTimeout(place, 300); document.fonts?.ready.then(place);   // the label width depends on the web font
 })();
