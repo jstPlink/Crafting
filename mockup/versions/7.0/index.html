@@ -603,7 +603,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 
 /* ---------- experiment "slideCargo": cargo slides in over the socket list, overview becomes a tall column ---------- */
 #cargoPanel{display:none}
-#stage.ux-slide #cargoPanel{display:block;position:absolute;left:40px;top:230px;width:356px;height:460px;z-index:14;transform:translateX(-400px);opacity:0;
+#stage.ux-slide #cargoPanel{display:block;position:absolute;left:40px;top:230px;width:356px;height:460px;z-index:14;transform:translateX(-520px);opacity:0;
   transition:transform .28s cubic-bezier(.2,.8,.2,1),opacity .2s;pointer-events:none;box-shadow:12px 0 30px rgba(0,0,0,.55)}
 #stage.ux-slide #cargoPanel.open{transform:none;opacity:1;pointer-events:auto}
 #stage.ux-slide #cargoPanel .cg{margin-top:0;height:100%}
@@ -739,14 +739,14 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .bstep-sp{flex:none;width:30px}
 
 /* sockets: independent floating panel, narrowed, collapsible down to just its title bar */
-#stage.ux-slide #left{position:absolute;left:40px;top:230px;width:356px;max-height:460px;z-index:12;
+#stage.ux-slide #left{position:absolute;left:40px;top:230px;width:310px;max-height:460px;z-index:12;
   display:flex;flex-direction:column;box-shadow:0 14px 34px rgba(0,0,0,.5)}
 
 /* module info card: right below the socket / cargo list, same column, not across the screen */
 #stage.ux-card #card{left:40px;top:706px;bottom:auto;width:356px;max-height:260px;overflow:auto;background:var(--panel);border-color:var(--line);z-index:12}
 
 /* ship data (overview): a single stacked column on the right */
-#stage.ux-slide #right{position:absolute;left:1676px;top:230px;width:204px;height:auto;flex:none;z-index:5}
+#stage.ux-slide #right{position:absolute;left:1570px;top:230px;width:310px;height:auto;flex:none;z-index:5}
 .ovgrid.c1{grid-template-columns:1fr}
 .ovgrid.c1 .ovc{padding:8px 4px;border-bottom:1px solid var(--line)}
 .ovgrid.c1 .ovc:last-child{border-bottom:0}
@@ -865,61 +865,132 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .integ-sep{height:2px;margin:12px 0 10px;background:linear-gradient(90deg,var(--accent),rgba(244,98,58,.15))}
 .slot .pwn{flex:none;min-width:38px;padding:0 10px;text-align:right;font-size:20px;font-weight:700;color:#fff}
 /* rated cells: long, gentle fade from the value to the far side */
-.rated-bg{background:linear-gradient(270deg,color-mix(in srgb,var(--rc) 40%,transparent) 0%,color-mix(in srgb,var(--rc) 30%,transparent) 22%,color-mix(in srgb,var(--rc) 20%,transparent) 45%,color-mix(in srgb,var(--rc) 10%,transparent) 70%,color-mix(in srgb,var(--rc) 3%,transparent) 90%,transparent 100%)}
+.rated-bg{background:linear-gradient(270deg,color-mix(in srgb,var(--rc) 70%,transparent) 0%,color-mix(in srgb,var(--rc) 46%,transparent) 14%,color-mix(in srgb,var(--rc) 24%,transparent) 30%,color-mix(in srgb,var(--rc) 8%,transparent) 46%,transparent 58%)}
 
 /* view mode: nothing moves or resizes, the UI just steps aside. Only the top bar (and the mockup menus) stay */
 #stage.viewmode #shipbox{left:160px;top:170px;width:1600px;height:800px;z-index:auto}
-#stage.viewmode #top,#stage.viewmode #build,#stage.viewmode #featbtn,#stage.viewmode #rarbtn,#stage.viewmode .vwinp{visibility:visible!important}
+#stage.viewmode #top,#stage.viewmode #build,#stage.viewmode #featbtn,#stage.viewmode #rarbtn,#stage.viewmode #diffbtn,#stage.viewmode .vwinp{visibility:visible!important}
 /* ship data blocks: no orange side bar */
 #stage.ux-slide #right .ov-body>.dpsblock,#stage.ux-slide #right .ov-body>.dpsblock:last-child{border-left:1px solid var(--line)}
 
-/* integrated modules: one row of three chips at the top of the socket list (icon + short name, rarity bar) */
-.irow{display:flex;gap:4px;margin-bottom:8px}
-.ichip{flex:1;min-width:0;display:flex;align-items:center;gap:6px;height:38px;padding:0 8px;background:linear-gradient(#34373c,#2a2d31);color:#fff;
-  border-bottom:3px solid var(--rc);font-size:14px;font-weight:700;white-space:nowrap;cursor:help}
-.ichip svg{width:18px;height:18px;flex:none}
-.ichip span{min-width:0;overflow:hidden;text-overflow:ellipsis}
-/* info card: header looks like a socket-list row (icon + vertical LV tag), parameter rows are plain with a light
-   divider instead of a full background each — folded away when there is nothing to show */
+/* left column geometry: the socket list is squeezed just enough that the details window below fits its largest state */
 #card.collapsed{display:none}
-/* layout of the left column: the socket list is squeezed just enough that the card below fits its largest state (340px) */
-#stage.ux-slide #left{top:176px;max-height:464px}   /* leaves ~12px above the REMOVE tab (top 652) */
-#stage.ux-slide #cargoPanel{top:176px;height:464px}
-.ichip{border-bottom:0;background:linear-gradient(90deg,color-mix(in srgb,var(--rc) 58%,#2a2d31) 0%,color-mix(in srgb,var(--rc) 26%,#2a2d31) 36%,#2a2d31 66%)}
+#stage.ux-slide #left{top:176px;max-height:448px}   /* leaves ~12px above the REMOVE tab (top 652) */
+#stage.ux-slide #cargoPanel{top:176px;height:448px;width:465px}   /* 1.5 x the socket window (310) */
 #stage.ux-slide.ux-card #card{top:682px;height:271px;max-height:none;box-sizing:border-box}   /* fixed box: its bottom (953) lines up with the bottom of the ship data column on the right */
-/* "REMOVE" flag: a tab above the card, outside its box */
-#cardtag{display:none;position:absolute;left:40px;top:652px;height:26px;padding:0 14px;align-items:center;z-index:12;background:var(--bad);color:#0b0d10;font-size:16px;font-weight:700;letter-spacing:.08em}
-#cardtag.show{display:flex}
-#stage.body-unknown #cardtag,#stage.viewmode #cardtag{display:none}
-/* diff and preview share one type scale: old value, dash and new value all read like the plain values */
-#stage.ux-slide.ux-card .cst .cv i,#stage.ux-slide.ux-card .cst .cv b{font-size:16px;font-weight:700;font-style:normal}
-#stage.ux-slide.ux-card .cst .cv i{color:#8a939b}
-#stage.ux-slide.ux-card .cst .cv em{font-size:16px;color:#8a939b;margin:0 6px}
-#stage.ux-slide.ux-card #card .ch .arrow{font-size:17px;font-weight:700;margin:0 6px;color:#8a939b}
-#stage.ux-slide.ux-card #card .ch .old{font-size:17px;font-weight:700}
-#stage.ux-slide.ux-card #card{padding:8px;background:var(--panel)}
-#stage.ux-slide.ux-card #card .ch{height:38px;min-height:38px;padding:0;margin-bottom:6px;border:0;background:linear-gradient(#34373c,#2a2d31);font-size:17px;letter-spacing:.03em;flex-wrap:nowrap;white-space:nowrap;overflow:hidden;gap:0}
-/* header for a module with rarity: same left-to-right rarity fade as its row in the list above (.slot.rar), and the
-   icon gets the same coloured inset edge (.slot.rar .ic) — the header sets --rc itself so both pick up the colour */
-#stage.ux-slide.ux-card #card .ch.rar{background:linear-gradient(90deg,color-mix(in srgb,var(--rc) 58%,#2a2d31) 0%,color-mix(in srgb,var(--rc) 26%,#2a2d31) 36%,#2a2d31 66%)}
-#stage.ux-slide.ux-card #card .ch.rar .ic{box-shadow:inset -4px 0 0 var(--rc)}
-#stage.ux-slide.ux-card #card .ch .ic{width:38px;height:100%;flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;background:var(--ic-bg)}
-#stage.ux-slide.ux-card #card .ch .ic svg{width:20px;height:20px}
-#stage.ux-slide.ux-card #card .ch .vtag{height:100%}
-#stage.ux-slide.ux-card #card .ch .cht{padding:0 10px;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-#stage.ux-slide.ux-card #card .ch .old{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#stage.ux-slide.ux-card #card{display:flex;flex-direction:column}
+#stage.ux-slide.ux-card #card{width:310px}
+#stage.ux-slide.ux-card #card.dual{width:628px}
+#stage.ux-slide.ux-card #card{overflow:visible}
+/* the card is only a holder: every module gets its own window (.cw), old on the left, new on the right */
+#stage.ux-slide.ux-card #card{background:none;border:0;box-shadow:none;padding:0;display:flex;flex-direction:row;gap:8px;align-items:stretch}
 #stage.ux-slide.ux-card #card.collapsed{display:none}
-#stage.ux-slide.ux-card #card>*{flex:none}
-#stage.ux-slide.ux-card #card>.cgrid{flex:1 1 0;min-height:0}
-/* the parameter rows share all the height that is left down to the base of the panel: no scrolling, more air */
-#stage.ux-slide.ux-card .cgrid{padding:0;display:flex;flex-direction:column}
-#stage.ux-slide.ux-card .cst{flex:1 1 0;max-height:44px;min-height:24px;height:auto;padding:0 2px;margin:0;border:0;border-bottom:1px solid rgba(255,255,255,.08);background:none;font-size:16px;gap:8px}
-#stage.ux-slide.ux-card .cst:last-child{border-bottom:0}
-#stage.ux-slide.ux-card .cst .cd{width:48px;font-size:16px}
-#stage.ux-slide.ux-card .cst .cl svg{width:16px;height:16px}
-#stage.ux-slide.ux-card #card .cf{padding:8px 10px;font-size:16px;background:linear-gradient(#34373c,#2a2d31);border:0;margin-top:6px}
-#stage.ux-slide.ux-card #card .emptyc,#stage.ux-slide.ux-card #card .retline{padding:8px 10px;font-size:16px;background:linear-gradient(#34373c,#2a2d31);margin-bottom:4px;border:0;color:#c3cad1}
+#stage.ux-slide.ux-card #card.mini{height:auto;align-items:flex-start}
+#stage.ux-slide.ux-card .cw{position:relative;flex:0 0 310px;width:310px;box-sizing:border-box;display:flex;flex-direction:column;padding:8px;background:var(--panel);border:1px solid var(--line);box-shadow:0 14px 34px rgba(0,0,0,.5)}
+#stage.ux-slide.ux-card .cw.mini{height:auto}
+/* window header: a socket-list row (icon, vertical LV tag, regular-weight name with the same size as the rows) */
+#stage.ux-slide.ux-card #card .ch{display:flex;flex-wrap:nowrap;gap:0;align-items:center;flex:none;height:38px;min-height:38px;padding:0;margin-bottom:6px;border:0;background:linear-gradient(#34373c,#2a2d31);overflow:hidden;white-space:nowrap}
+#stage.ux-slide.ux-card #card .ch.rar{background:linear-gradient(90deg,color-mix(in srgb,var(--rc) 58%,#2c2f34) 0%,color-mix(in srgb,var(--rc) 26%,#2c2f34) 36%,#2c2f34 66%)}
+#stage.ux-slide.ux-card #card .ch.rar .ic{box-shadow:inset -4px 0 0 var(--rc)}
+#stage.ux-slide.ux-card #card .ch .ic{width:36px;height:100%;flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;background:var(--ic-bg)}
+#stage.ux-slide.ux-card #card .ch .ic svg{width:22px;height:22px}
+#stage.ux-slide.ux-card #card .ch .vtag{height:100%}
+#stage.ux-slide.ux-card #card .ch .cht{padding:0 12px;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:20px;font-weight:600;letter-spacing:.02em}
+/* parameter rows share the height that is left down to the base of the window: no scrolling */
+#stage.ux-slide.ux-card .cw>.cgrid{flex:1 1 0;min-height:0;display:flex;flex-direction:column;padding:0}
+#stage.ux-slide.ux-card .cw .cst{flex:1 1 0;max-height:44px;min-height:24px;height:auto;padding:0 2px;margin:0;border:0;border-bottom:1px solid rgba(255,255,255,.08);background:none;font-size:16px;gap:8px}
+#stage.ux-slide.ux-card .cw .cst:last-child{border-bottom:0}
+#stage.ux-slide.ux-card .cw .cst .cv b{font-size:16px;font-weight:700}
+#stage.ux-slide.ux-card .cw .cst .cd{width:52px;font-size:16px;font-weight:700}
+#stage.ux-slide.ux-card .cw .cst .cl svg{width:16px;height:16px}
+#stage.ux-slide.ux-card .cw .cf{flex:none;padding:8px 10px;font-size:16px;background:linear-gradient(#34373c,#2a2d31);border:0;margin-top:6px}
+#stage.ux-slide.ux-card .cw .emptyc,.cw .retline{flex:none;padding:8px 10px;font-size:16px;background:linear-gradient(#34373c,#2a2d31);margin-top:6px;border:0;color:#c3cad1}
+/* cargo rows: the same row as the socket list (height, gradient, icon, vertical LV tag, regular-weight name) */
+.cg-row.slot{height:38px;gap:0;padding:0;margin:0 0 4px 0;margin-left:0}
+.cg-row.slot .ic{width:36px}
+.cg-row.slot .nm{flex:1;min-width:0;display:flex;align-items:center;padding:0 12px;font-size:20px;font-weight:600;letter-spacing:.02em}
+.cg-row.slot .nmx{flex:1;min-width:0;overflow:hidden;white-space:nowrap}
+.cg-row.slot .nmx .nmt{display:inline-block}
+.cg-row.slot .nmx.scroll .nmt{animation:bn-scroll 6s ease-in-out infinite alternate}
+.cg-row.slot.nopow .nm{color:#c9aaaa}
+.cg-row .cgs{flex:none;display:flex;align-items:center;gap:8px;padding:0 8px;font-size:16px;font-weight:700;color:#fff;white-space:nowrap}
+.cg-row .cgs .dlt{font-size:14px}
+.cg-row.slot .act{flex:none;width:auto;padding:0 10px 0 0;gap:6px}
+/* sort button = same look as BACK */
+.cg-back .gp,.cg-back .key{flex:none;transform:scale(.8);margin:-4px -4px -4px 0}
+/* window tags: what the window shows (CURRENT / NEW / REMOVE), a tab across its top edge, outside the box */
+.cw .wtag{position:absolute;left:-1px;right:-1px;bottom:100%;height:26px;display:flex;align-items:center;justify-content:center;gap:10px;
+  font-size:16px;font-weight:700;letter-spacing:.2em;color:#0b0d10}
+.cw .wtag .gp,.cw .wtag .key{flex:none;transform:scale(.8);margin:-4px 0}
+.cw.tag-cur .wtag{background:#8a939b}
+.cw.tag-new .wtag{background:var(--good)}
+.cw.tag-rem .wtag{background:var(--bad)}
+/* cargo rows with two lines: icon + quantity on the left, name on top and the module values below */
+.cg-row.slot.two{height:54px}
+.cg-row.slot.two .ic .qty{position:static;font-size:14px;font-weight:700;line-height:1;color:#dfe5ea;text-shadow:none}
+.cg-row.slot .mid{flex:1;min-width:0;padding:0 8px 0 0;display:flex;flex-direction:column;justify-content:center;gap:1px}
+.cg-row.slot .mid .nm{flex:none;padding:0;display:block;overflow:hidden}
+.cg-row.slot .mid .nmx{display:block}
+.cg-row.slot .sub{display:flex;align-items:center;gap:10px;margin:0;font-size:16px;font-weight:600;color:var(--dim);white-space:nowrap}
+/* the INTEGRATED tag on the window of an integrated module: neutral grey, like CURRENT */
+.cw .wtag{background:#8a939b}
+.slot.integ{cursor:pointer}
+/* level tag of a rated value (ship value, shield, integrity, DPS, speed): a vertical strip on the right edge of the cell */
+#stage.ux-slide .ovc.rated-bg{position:relative;padding-right:26px}
+.ovc .lvt{position:absolute;right:0;top:0;bottom:0;width:18px;display:flex;align-items:center;justify-content:center;background:var(--rc);color:#0b0d10;
+  font-size:12px;font-weight:700;letter-spacing:.04em;line-height:1;writing-mode:vertical-rl;transform:rotate(180deg)}
+/* one spacing system for the side panels: 40px from the screen edge, 8px between blocks, 14px inside every panel
+   (rows of the socket list and values of the ship data start at the same distance from their panel edge) */
+#stage.ux-slide .lp-body{padding:8px 6px 14px 14px;scrollbar-gutter:stable}   /* 6px + the thin scrollbar = 14px on the right too */
+#stage.ux-slide #right .ov-body>.dpsblock{padding:2px 0}
+#stage.ux-slide #right .ovgrid.c1{margin:0}
+#stage.ux-slide #right .ovgrid.c1 .ovc{padding:8px 14px}
+#stage.ux-slide #right .ovgrid.c1 .ovc.rated-bg{padding-right:34px}
+/* ship data: same alignment for every block (the last block kept the old padding), text scale closer to the socket list,
+   POWER is the bar alone: no numbers, no badge */
+#stage.ux-slide #right .ov-body>.dpsblock,#stage.ux-slide #right .ov-body>.dpsblock:last-child{padding:2px 0}
+#stage.ux-slide #right .ovc .rl{font-size:16px;font-weight:600;letter-spacing:.05em;color:#c3cad1}
+#stage.ux-slide #right .ovc .cv b{font-size:26px;font-weight:700}
+#stage.ux-slide #right .ovc .dslot .sd{font-size:22px;font-weight:700;padding:0 6px}
+#stage.ux-slide #right .ovc.pw{padding:10px 14px 14px}
+#stage.ux-slide #right .ovc.pw .ptick{margin-top:8px}
+/* ship data: icon block at the far right (after the LV tag), like the icon block of a socket row; the column runs
+   down to the lowest point of the left side (953) with wider gaps between the three blocks, rows share the height */
+#stage.ux-slide #right{height:777px;display:flex;flex-direction:column}
+#stage.ux-slide #right .ov{flex:1;min-height:0;display:flex;flex-direction:column}
+#stage.ux-slide #right .ov-body{flex:1;min-height:0;gap:16px}
+#stage.ux-slide #right .ov-body>.dpsblock{display:flex;flex-direction:column;min-height:0}
+#stage.ux-slide #right .ov-body>.dpsblock:nth-child(1){flex:1 1 0}
+#stage.ux-slide #right .ov-body>.dpsblock:nth-child(2){flex:3 1 0}
+#stage.ux-slide #right .ov-body>.dpsblock:nth-child(3){flex:5 1 0}
+#stage.ux-slide #right .ovgrid.c1{flex:1;min-height:0;display:flex;flex-direction:column;align-items:stretch}
+#stage.ux-slide #right .ovgrid.c1 .ovc{flex:1 1 0;position:relative;display:flex;flex-direction:column;justify-content:center;padding:6px 70px 6px 14px}
+#stage.ux-slide #right .ovgrid.c1 .ovc.rated-bg{padding-right:70px}
+#stage.ux-slide #right .ovc.pw{padding:6px 54px 6px 14px}
+#stage.ux-slide #right .ric{position:absolute;right:0;top:0;bottom:0;width:40px;display:grid;place-items:center;background:var(--ic-bg);color:#fff}
+#stage.ux-slide #right .ric svg{width:22px;height:22px}
+#stage.ux-slide #right .ovc .lvt{right:40px}
+/* ship data text scale = the socket list: labels like the "Empty" rows (weight 500, camel case), values like the module names
+   (20px / 600), LV strip as thick as the vertical tag of a row (15px) */
+#stage.ux-slide #right .ovc .rl{font-size:17px;font-weight:500;letter-spacing:.02em;text-transform:none}
+#stage.ux-slide #right .ovc .cv b{font-size:20px;font-weight:600}
+#stage.ux-slide #right .ovc .cv b small{font-size:15px;font-weight:600}
+#stage.ux-slide #right .ovc .dslot .sd{font-size:18px}
+.ovc .lvt{width:15px;font-size:11px}
+#stage.ux-slide #right .ovgrid.c1 .ovc,#stage.ux-slide #right .ovgrid.c1 .ovc.rated-bg{padding-right:67px}
+#stage.ux-slide #right .ovc .lvt{right:40px}
+/* cargo rows: values right under the name, rows 10 % taller (60 -> 66px) */
+.cg-row.slot.two{height:66px}
+.cg-row.slot .mid{gap:0}
+/* window tags (CURRENT / NEW / REMOVE): as tall as the SOCKETS / SHIP DATA title bars (46px); the list above ends 10px higher to make room */
+#stage.ux-slide.ux-card .cw .wtag{height:46px;font-size:18px}
+/* a value that carries the colour of its change (card NEW window, ship data, cargo rows) */
+b.dv{padding:0 8px}
+.cg-row .sub b.dv{padding:0 6px}
+/* the value a figure has now, dimmed, in front of the new (coloured) one: "99 – 176" */
+.ov{color:#8a939b;font-weight:600}
+.ovd{color:#8a939b;margin:0 6px}
+#stage.ux-slide #right .ovc .dslot{align-items:center;justify-content:flex-start;font-size:18px;white-space:nowrap}
+.cg-row .sub .ov,.cg-row .sub .ovd{font-size:16px}
 </style>
 </head>
 <body>
@@ -939,7 +1010,6 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
        both on the left, side by side, so a swap's parameter differences are easy to compare -->
   <div id="left" class="panel"></div>
   <div id="cargoPanel"></div>
-  <div id="cardtag">REMOVE</div>
   <div id="card"></div>
 
   <!-- ship data (overview): a column on the right -->
@@ -948,7 +1018,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
   <div id="shipbox"><div id="labels3d"></div><div class="tag3d" id="tagSel"></div><div class="tag3d hv" id="tagHov"></div>
     <div id="viewui"><div class="vhint">LEFT DRAG · ROTATE &nbsp;&nbsp; RIGHT DRAG / SHIFT+DRAG · PAN &nbsp;&nbsp; WHEEL · ZOOM &nbsp;&nbsp; DOUBLE CLICK · RESET</div>
       <button id="viewexit">EXIT VIEW MODE <i class="key">Esc</i></button></div></div>
-  <svg id="hdrlink" viewBox="0 0 1920 1080" width="1920" height="1080"><path d="M396 199H478l10 10H618l10 -10H700"/><path class="thin" d="M410 207H472l10 10H624l10 -10H686"/><rect x="396" y="196" width="6" height="6"/><rect x="694" y="196" width="6" height="6"/><path d="M1220 199H1378l10 10H1518l10 -10H1676"/><path class="thin" d="M1234 207H1372l10 10H1524l10 -10H1662"/><rect x="1220" y="196" width="6" height="6"/><rect x="1670" y="196" width="6" height="6"/></svg>
+  <svg id="hdrlink" viewBox="0 0 1920 1080" width="1920" height="1080"><path d="M350 199H455l10 10H595l10 -10H700"/><path class="thin" d="M364 207H449l10 10H601l10 -10H686"/><rect x="350" y="196" width="6" height="6"/><rect x="694" y="196" width="6" height="6"/><path d="M1220 199H1325l10 10H1465l10 -10H1570"/><path class="thin" d="M1234 207H1319l10 10H1471l10 -10H1556"/><rect x="1220" y="196" width="6" height="6"/><rect x="1564" y="196" width="6" height="6"/></svg>
   <svg id="links" viewBox="0 0 1920 1080" width="1920" height="1080"></svg>   <!-- lines from the 3D sockets to their rows in the list -->
   <div id="picker"></div>
   <div id="intro"></div>

@@ -66,9 +66,9 @@ const rarDot = it => flag('rarityTag') ? rarTag(it) : rarSquare(it);
 // icon block + LV tag for a mounted module, same look as a socket-list row (leftRow) — also used in the details card
 // header. Relies on the ancestor (.slot / .ch) setting --rc: .vtag is a sibling of .ic, not a descendant, so it needs
 // the colour to come from further up to reach both of them
-function modIcTag(it){
+function modIcTag(it, extra=''){
   if(!it) return '';
-  return `<div class="ic">${ico(it.fam)}${flag('rarityTag') && !FLAGS.vertTag.on ? rarTag(it) : ''}</div>${flag('rarityTag') && FLAGS.vertTag.on ? `<span class="vtag">LV${it.lv}</span>` : ''}`;
+  return `<div class="ic">${ico(it.fam)}${flag('rarityTag') && !FLAGS.vertTag.on ? rarTag(it) : ''}${extra}</div>${flag('rarityTag') && FLAGS.vertTag.on ? `<span class="vtag">LV${it.lv}</span>` : ''}`;
 }
 
 // WEAPON params:  ammo type, power consumption, heat generation (primary only),
@@ -330,6 +330,27 @@ function applyFlags(){
   window.resizeShip?.();                                  // layout flags change the 3D view size
   $('#stage').classList.toggle('ux-block', flag('blockedReason'));
 }
+// DIFF menu (switcher.js): live editing of the diff colours and thresholds, per-browser copy, "save as default" into this file
+window.craftingDiff = {
+  get: () => ({ ...DIFF }),
+  defaults: () => ({ ...DIFF_DEFAULT }),
+  set(k, v){
+    DIFF[k] = v;
+    try{ localStorage.setItem(DIFF_KEY, JSON.stringify(DIFF)); }catch(e){}
+    renderAll();
+  },
+  reset(){
+    Object.assign(DIFF, DIFF_DEFAULT);
+    try{ localStorage.removeItem(DIFF_KEY); }catch(e){}
+    renderAll();
+  },
+  async saveDefault(){
+    const r = await fetch('save-diff', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(DIFF) });
+    if(!r.ok) throw new Error('HTTP ' + r.status);
+    Object.assign(DIFF_DEFAULT, DIFF);
+    try{ localStorage.removeItem(DIFF_KEY); }catch(e){}
+  },
+};
 // RARITY menu (switcher.js): live colour editing, per-browser copy, and "save as default" into this file (dev server only)
 window.craftingRarity = {
   colors: () => [1,2,3,4,5,6,7].map(i => RARITY[i].color),
@@ -385,6 +406,10 @@ const fmt = n => Math.round(n).toLocaleString('en-US');
 const sgn = n => (n>0?'+':n<0?'−':'') + fmt(Math.abs(n));
 const mv = (m,k) => (m && m[k]) || 0;
 const dev = () => S.inputPref==='auto' ? S.device : S.inputPref;
+// with mouse and keyboard nothing is selected (only hover shows); with a gamepad one block is always in focus.
+// S.lastInput = the device that really produced the last input ('pad' | 'kbm'), whatever the glyph preference says
+const noSel = () => S.lastInput!=='pad';
+function setLastInput(v){ if(S.lastInput!==v){ S.lastInput = v; renderAll(); } }
 const ITEM = id => ITEMS[id];
 
 const I = {
@@ -456,6 +481,22 @@ const modKeys = (...its) => KEY_ORDER.filter(k => its.some(it => it && MOD_KEYS[
 const fmtStat = (k,v) => { const m = STAT_META[k]; if(m?.text) return v||'—';
   return (m?.dec && v%1 ? v.toFixed(m.dec) : fmt(v)) + (m?.unit||''); };
 const sgnStat = (k,d) => { const m = STAT_META[k]; return (d>0?'+':'−') + (m?.dec && d%1 ? Math.abs(d).toFixed(m.dec) : fmt(Math.abs(d))); };
+// diff colours come in steps, by how much the value changes relative to the old one (`rel`). Thresholds (t1, t2, in %) and
+// the five colours live in DIFF: edit them live from the DIFF menu; SAVE AS DEFAULT rewrites the next line (keep it on ONE line)
+const DIFF_DEFAULT = {"t1":20,"t2":40,"low":"#ffffff","worseMid":"#ff7c5c","betterMid":"#5df11e","worseHigh":"#ff5a5a","betterHigh":"#00ff62"};   // @diff-defaults
+const DIFF_KEY = 'crafting.diff';   // per-browser working copy
+const DIFF = { ...DIFF_DEFAULT };
+try{ Object.assign(DIFF, JSON.parse(localStorage.getItem(DIFF_KEY)) || {}); }catch(e){}
+//   below t1 `low` (white) · below t2 yellow (worse) / green (better) · t2 and more red (worse) / blue (better)
+// dgrad: text colour (card cells); dgradSd: text + tinted background (ship data badges)
+function dmix(cls, rel){
+  if(cls!=='up' && cls!=='dn') return null;
+  const a = Math.abs(isFinite(rel) ? rel : 1) * 100, up = cls==='up';
+  const col = a < DIFF.t1 ? DIFF.low : a < DIFF.t2 ? (up ? DIFF.betterMid : DIFF.worseMid) : (up ? DIFF.betterHigh : DIFF.worseHigh);
+  return { col, tint: a < DIFF.t1 ? 8 : 24 };
+}
+const dgrad = (cls, rel) => { const m = dmix(cls, rel); return m ? ` style="color:${m.col}"` : ''; };
+const dgradSd = (cls, rel) => { const m = dmix(cls, rel); return m ? ` style="color:${m.col};background:color-mix(in srgb,${m.col} ${m.tint}%,#22262b)"` : ''; };
 function dcls(k,d){
   if(!d) return 'nt';
   const b = STAT_META[k]?.better;
@@ -647,7 +688,7 @@ function ensureTab(){
 function computePreview(){
   if(S.hoverRemove && LY.byId[S.hoverRemove] && S.att[S.hoverRemove]) return makePreview(S.hoverRemove, null);
   const list = cargoList();
-  const id = S.hoverCargo ?? (S.focus==='cargo' ? list[S.cargoIdx]?.id : null);
+  const id = S.hoverCargo ?? (S.focus==='cargo' && !noSel() ? list[S.cargoIdx]?.id : null);
   if(id) return makePreview(S.sel, id);
   // hovering a mounted module (its row in the list, or the part itself in the 3D view), outside
   // the cargo picker: it can be removed, so preview that removal in the info panel below
@@ -720,7 +761,7 @@ const shortName = it => isPylon(it.id) ? (it.type==='ext' ? 'Extension Arm' : 'S
   : it.name.endsWith(' '+FAMILY[it.fam].label) ? it.name.slice(0, -FAMILY[it.fam].label.length-1) : it.name;
 
 function leftRow(s, up=1, statKey=null){
-  const a = S.att[s.id], it = a ? ITEM(a.id) : null, isSel = S.sel===s.id;
+  const a = S.att[s.id], it = a ? ITEM(a.id) : null, isSel = S.sel===s.id && S.intSel==null && !noSel();
   const kcls = !it ? 'free' : a.t==='pyl' ? 'pyl' : KIND[it.kind].cls;
   const cls = ['slot', kcls, isSel?'sel':'', isSel&&S.focus==='slots'?'focus':'', S.hoverSlot===s.id?'hov':'', S.flash===s.id?'flash':'',
                s.depth?'child':'',
@@ -733,6 +774,15 @@ function leftRow(s, up=1, statKey=null){
     ${rc ? modIcTag(it) : `<div class="ic">${icon}</div>`}
     <div class="nm" title="${full}"><span class="nmx"><span class="nmt">${name}</span></span></div>
     ${statKey==='power' && it && a.t==='mod' ? `<span class="pwn" title="Power used">${it.power}</span>` : ''}
+  </div>`;
+}
+
+// integrated module row: same look as a mounted module, but not selectable (no data-slot)
+function integRow(m, idx){
+  const isSel = S.intSel===idx && !noSel();
+  return `<div class="slot ${KIND[m.kind].cls} rar integ${isSel?' sel':''}${isSel&&S.focus==='slots'?' focus':''}" data-int="${idx}" style="--d:0;--rc:${rarCol(m)}" title="${m.name} · integrated in the Body: cannot be changed">
+    ${modIcTag(m)}
+    <div class="nm"><span class="nmx"><span class="nmt">${m.name}</span></span></div>
   </div>`;
 }
 
@@ -756,14 +806,11 @@ function renderLeft(){
   // (it no longer shares a column with the ship data). Not collapsible: it's always fully shown.
   let html = `
     <div class="lp-head"><div class="nm">SOCKETS</div>
-      ${flag('listModes') && !BODY.unknown ? `<button class="lmcycle" data-lmcycle title="Change the view of the list (tree · filled · type · rarity · power)"><small>VIEW</small>${LIST_LABEL[S.listMode]}${S.focus==='slots' ? glyph('X') : ''}</button>` : ''}
+      ${flag('listModes') && !BODY.unknown ? `<button class="lmcycle" data-lmcycle title="Change the view of the list (tree · filled · type · rarity · power)"><small>VIEW</small>${LIST_LABEL[S.listMode]}${S.focus==='slots' ? glyph('SORT') : ''}</button>` : ''}
     </div>
     <div class="lp-body">`;
   if(BODY.unknown){
     html += `<div class="cg-empty">UNKNOWN SHIP<br><span class="cg-sub">Nothing is known about this ship yet, only that it has a slot in the list.</span></div>`;
-  }
-  if(!BODY.unknown && BODY.integrated?.length){   // the integrated modules: one row of three chips on top of the list
-    html += `<div class="irow" title="Integrated in the Body: cannot be changed">${BODY.integrated.map(g => `<div class="ichip" style="--rc:${rarCol(g.mod)}" title="${g.mod.name} · LV${g.mod.lv} · integrated">${ico(g.mod.fam)}<span>${g.mod.name.replace(/ Mk\d+$/, '')}</span></div>`).join('')}</div>`;
   }
   for(const g of BODY.unknown ? [] : listGroups(LY)){
     if(g.title && !g.tree) html += `<div class="sec-title"><span class="st-l">${g.title}</span><span>${g.right}</span></div>`;   // the rarity view has no group labels: the order says it; the tree view has none either (socket size is on the icon)
@@ -772,6 +819,10 @@ function renderLeft(){
       const at = Object.fromEntries(g.rows.map((s,i) => [s.id,i]));
       for(const s of g.rows) html += leftRow(s, s.parent ? at[s.id]-at[s.parent] : 1);
     }else for(const s of g.rows) html += leftRow({ ...s, depth:0 }, 1, S.listMode==='power' ? 'power' : null);   // flat views: no indentation
+  }
+  if(!BODY.unknown && BODY.integrated?.length){   // integrated modules close the list
+    html += `<div class="sec-title integ-t"><span class="st-l">${ico('lock')}INTEGRATED</span></div>`;
+    BODY.integrated.forEach((g, i) => { html += integRow(g.mod, i); });
   }
   html += `</div>`;
   $('#left').innerHTML = html;
@@ -813,7 +864,9 @@ function renderRight(){
   // always render the badge (hidden, not omitted, when there's nothing to show): an omitted element
   // is shorter than one with the same font/padding as the value next to it, so appearing/disappearing
   // deltas used to change the row's height. See STAT_META / .sd.off convention used elsewhere.
-  const dl = (cls, txt) => `<span class="sd ${txt?cls:'off'}">${txt||'+0'}</span>`;
+  // `old` = the value the figure has now: it is shown next to the new one (dimmed, "old – new") while previewing
+  const dl = (cls, txt, rel, old) => `<span class="sd ${txt?cls:'off'}"${txt ? dgradSd(cls, rel) + ` data-old="${old||''}"` : ''}>${txt||'+0'}</span>`;
+  const oldSecs = v => !isFinite(v) ? '∞' : (v >= 100 ? Math.round(v) : v.toFixed(1)) + 's';
   const rated = flag('maxRatings');
 
   // ship data column, on the right: 3 groups — value on its own, then defences + power, then damage and speed
@@ -822,20 +875,20 @@ function renderRight(){
     <div class="ov-body">
       <div class="dpsblock">
         <div class="ovgrid c1">
-          ${ovRow('value','SHIP VALUE', fmt(n.value), dl(dcls('value', n.value-t.value), n.value!==t.value ? sgn(n.value-t.value) : ''), rated ? rate(n.value, gameMax('value')) : null, true)}
+          ${ovRow('value','SHIP VALUE', fmt(n.value), dl(dcls('value', n.value-t.value), n.value!==t.value ? sgn(n.value-t.value) : '', (n.value-t.value)/(t.value||1), fmt(t.value)), rated ? rate(n.value, gameMax('value')) : null, true)}
         </div>
       </div>
       <div class="dpsblock">
         <div class="ovgrid c1">
           ${lineRow('shield','SHIELD',BODY.shield,0,'', rated ? rate(BODY.shield, gameMax('shield')) : null, true)}
           ${lineRow('hull','INTEGRITY',BODY.integrity,0,'', rated ? rate(BODY.integrity, gameMax('integrity')) : null, true)}
-          ${ovRow('power','POWER', `<span class="${over?'bad':''}">${n.power}<small>/ ${BODY.generator}</small></span>`, dl(over ? 'dn' : dcls('power',pd), pd ? sgn(pd) : ''), null, true, powerTicks(t.power, n.power, over ? 'dn' : dcls('power',pd)))}
+          <div class="ovc pw" title="Power used / generator"><span class="rl">Power</span><span class="ric">${ico('power')}</span>${powerTicks(t.power, n.power, over ? 'dn' : dcls('power',pd))}</div>
         </div>
         ${flag('shipQuality') ? qualityRow(t, n) : ''}
       </div>
       <div class="dpsblock">   <!-- damage and ship speed -->
         <div class="ovgrid c1">
-          ${ovRow('heat','FIRE TIME', secs(n.fireTime), dl(fdCls, fdTxt), null, true)}
+          ${ovRow('heat','FIRE TIME', secs(n.fireTime), dl(fdCls, fdTxt, isFinite(fd) ? fd/(t.fireTime||1) : 1, oldSecs(t.fireTime)), null, true)}
           ${dpsRow('PRIMARY DPS','priDps',t,n,true)}${dpsRow('SECONDARY DPS','secDps',t,n,true)}
           ${lineRow('speed','MAX SPEED',n.maxSpeed,n.maxSpeed-t.maxSpeed,'maxSpeed', rated ? rate(n.maxSpeed, gameMax('speed')) : null, true)}
           ${lineRow('boost','BOOST DURATION',n.boostTime,n.boostTime-t.boostTime,'boostTime', null, true)}
@@ -859,8 +912,8 @@ function renderRight(){
   const top = cands.length>1 ? Math.max(...cands.map(x => statOf(x.m))) : null;
   const bestOk = top!==null && (!mounted || mounted.kind!==cands[0].m.kind || top>statOf(mounted));
   const rows = info.map(({ m, pyl, room, fits }, i)=>{
-    const focus = S.focus==='cargo' && i===S.cargoIdx, hov = S.hoverCargo===m.id;
-    const label = !room ? 'CARGO FULL' : !fits ? 'NO POWER' : (curIt?'REPLACE':'EQUIP');
+    const focus = S.focus==='cargo' && i===S.cargoIdx && !noSel(), hov = S.hoverCargo===m.id;
+    const label = !room ? 'CARGO FULL' : !fits ? 'NO POWER' : (curIt?'':'EQUIP');   // a replacement needs no word: the A glyph says it
     // "blockedReason" experiment: a row that cannot be mounted always says why, even without focus / hover
     const why = flag('blockedReason') && !fits ? (!room ? 'CARGO FULL' : `NO POWER <b>+${overBy(m.id)}</b>`) : '';
     const two = keys && !pyl;
@@ -869,23 +922,25 @@ function renderRight(){
       // the row shows the stat the list is sorted by: power when sorting by power, the key stat otherwise
       const byPow = S.sort==='power', k = byPow ? 'power' : KEYSTAT[m.kind];
       const d = mounted && (byPow || mounted.kind===m.kind) ? m[k]-mounted[k] : null;
-      const dh = d===null ? '' : d ? `<span class="dlt ${dcls(k,d)}">${d>0?'▲':'▼'} ${fmt(Math.abs(d))}</span>` : '<span class="dlt nt">=</span>';
+      const dc = d ? dcls(k,d) : 'nt', dst = d ? dgradSd(dc, d/(Math.abs(mounted[k])||1)) : '';
+      const dh = '';
       const best = !byPow && bestOk && fits && statOf(m)===top ? `<span class="best" title="Highest ${STAT_META[k].label} among the parts you can mount here">BEST</span>` : '';
-      sub = `<div class="sub">${flag('stackBadge') ? '' : `<span class="q">×${S.cargo[m.id]}</span>`}<span>${byPow?'POWER':k==='dps'?'DPS':'SPEED'} <b>${m[k]}</b></span>${dh}${best}</div>`;
+      sub = `<div class="sub"><span>${byPow?'POWER':k==='dps'?'DPS':'SPEED'} ${dst ? `<span class="ov">${mounted[k]}</span><span class="ovd">–</span>` : ''}<b${dst ? ` class="dv"${dst}` : ''}>${m[k]}</b></span>${best}</div>`;
     }
-    return `<div class="cg-row ${pyl?'pyl':KIND[m.kind].cls+' rar'} ${two?'two':''} ${focus?'sel':''} ${hov?'hov':''} ${fits?'':'nopow'}" data-item="${m.id}" data-i="${i}"${pyl?'':` style="--rc:${rarCol(m)}"`}>
-      <div class="ic">${ico(pyl?'pylon':m.fam)}${!pyl && flag('rarityTag') ? rarTag(m) : ''}${!pyl && flag('stackBadge') ? `<span class="qty" title="In cargo">${S.cargo[m.id]}</span>` : ''}</div>
-      <div class="mid"><div class="nm"><span class="nmt">${m.name}</span>${pyl||two||flag('stackBadge')?'':`<small>×${S.cargo[m.id]}</small>`}</div>${sub}</div>
+    const qty = !pyl && flag('stackBadge') ? `<span class="qty" title="In cargo">×${S.cargo[m.id]}</span>` : '';
+    return `<div class="cg-row slot ${two?'two':''} ${pyl?'pyl':KIND[m.kind].cls+' rar'} ${focus?'sel':''} ${hov?'hov':''} ${fits?'':'nopow'}" data-item="${m.id}" data-i="${i}"${pyl?'':` style="--rc:${rarCol(m)}"`}>
+      ${pyl ? `<div class="ic">${ico('pylon')}</div>` : modIcTag(m, qty)}
+      <div class="mid"><div class="nm" title="${m.name}"><span class="nmx"><span class="nmt">${m.name}</span></span></div>${sub}</div>
       <div class="act">${why ? `<span class="why" title="${!room?'No free cargo slot for the parts that would come back':'Power needed above the Body generator'}">${why}</span>` : focus||hov?label:''}${focus?glyph('A'):''}</div>
     </div>`;
   }).join('') || (holdsParts(S.sel) ? `<div class="cg-empty locked">${ico('lock')}<br>THIS ARM HOLDS ${partsOn(S.sel)} PART${partsOn(S.sel)>1?'S':''}<br><span class="cg-sub">Only end parts can be replaced or removed: remove the parts on this arm first</span></div>`
      : `<div class="cg-empty">NO ${TAB_LABEL[S.tab].toUpperCase()} FOR A ${SIZE[sock.size].label} SOCKET IN CARGO<br><span class="cg-sub">Try another tab, or craft / loot new parts</span></div>`);
-  const sortBtn = keys && S.tab!=='pylon' ? `<button class="sortchip" data-sort title="Change the ordering of this list">SORT · ${sortLabel()}</button>` : '';
+  const sortBtn = keys && S.tab!=='pylon' ? `<button class="cg-back" data-sort title="Change the ordering of this list">${glyph('SORT')}<span>SORT · ${sortLabel()}</span></button>` : '';
 
   // no "TARGET · socket" line any more: back button and sort button share one row
   const cg = `<div class="cg">
     <div class="head">CARGO<small>${cargoSlots(S.cargo)} / ${CARGO_SLOTS} SLOTS</small></div>
-    <div class="cg-bar">${flag('slideCargo') ? `<button class="cg-back" data-act="b">${glyph('B')}<span>BACK TO SOCKETS</span></button>` : '<span></span>'}${sortBtn}</div>
+    <div class="cg-bar">${flag('slideCargo') ? `<button class="cg-back" data-act="b">${glyph('B')}<span>BACK</span></button>` : '<span></span>'}${sortBtn}</div>
     <div class="cats">${glyph('LT')}${cats}${glyph('RT')}</div>
     <div class="cg-list">${rows}</div>
   </div>`;
@@ -898,8 +953,9 @@ function renderRight(){
     // whether or not that panel is collapsed, while the Body switcher and overview stay visible at the bottom
   }else{ $('#right').innerHTML = ov + cg; $('#cargoPanel').innerHTML = ''; $('#cargoPanel').classList.remove('open'); }
   const l = $('.cg-list'); if(l) l.scrollTop = keep;
+  marquee('#cargoPanel .cg-row .nmx');
   if(BODY.unknown) for(const c of document.querySelectorAll('#right .ovc')){   // nothing is known about this ship: no figures at all
-    c.querySelector('b').textContent = '—'; c.querySelector('.dslot').innerHTML = ''; c.classList.remove('rated-bg'); c.removeAttribute('style');
+    if(c.querySelector('b')) c.querySelector('b').textContent = '—'; if(c.querySelector('.dslot')) c.querySelector('.dslot').innerHTML = ''; c.querySelector('.ptick')?.remove(); c.classList.remove('rated-bg'); c.removeAttribute('style'); c.querySelector('.lvt')?.remove();
   }
 }
 
@@ -939,7 +995,7 @@ const gameMax = metric => Math.max(...BODY_LIST.filter(id => BODIES[id].tag!=='C
 // rating of a value against the game max: colour of the rarity band it falls into (LV1 brown … LV7 gold)
 function rate(cur, max){
   const r = max ? Math.min(1, cur/max) : 0, band = Math.min(7, Math.floor(r*7)+1);
-  return { c:RARITY[band].color, attrs:`style="--rc:${RARITY[band].color}" title="${Math.round(r*100)}% of the best build in the game (${fmt(max)})"` };
+  return { band, c:RARITY[band].color, attrs:`style="--rc:${RARITY[band].color}" title="${Math.round(r*100)}% of the best build in the game (${fmt(max)})"` };
 }
 function ratedBar(cur, max){
   const r = max ? Math.min(1, cur/max) : 0, band = Math.min(7, Math.floor(r*7)+1), c = RARITY[band].color;
@@ -955,19 +1011,27 @@ function powerTicks(cur, next, cls){
   for(let i = 0; i < G; i++) h += `<i class="${i < lo ? 'on' : i >= lo && i < hi ? 'df ' + cls : ''}"></i>`;
   return `<div class="ptick">${h}</div>`;
 }
+const camel = t => String(t).toLowerCase().split(' ').map(w => w==='dps' ? 'DPS' : w.charAt(0).toUpperCase() + w.slice(1)).join(' ');   // "FIRE TIME" -> "Fire Time", "PRIMARY DPS" -> "Primary DPS"
 function ovRow(icon, label, val, delta='', rated=null, cell=false, extra=''){
+  label = camel(label);
+  // the change is no longer a +/- badge: the new value itself takes its colour and tint (style carried by the badge markup)
+  const dm = /<span class="sd ([a-z]+)"( style="[^"]*")?/.exec(delta || '');
+  const dvs = dm && dm[1]!=='off' && dm[1]!=='nt' && dm[2] ? ` class="dv"${dm[2]}` : '';
+  const om = /data-old="([^"]*)"/.exec(delta || '');
+  const dold = dvs && om && om[1] ? `<span class="ov">${om[1]}</span><span class="ovd">–</span>` : '';
   const at = `${rated?'rated-bg':''}" ${rated?rated.attrs:''}`;
   return cell
-    ? `<div class="ovc ${at}><span class="rl">${label}</span><div class="cv"><div class="dslot">${delta}</div><b>${val}</b></div>${extra}</div>`
+    ? `<div class="ovc ${at}><span class="rl">${label}</span><div class="cv"><div class="dslot">${dold}</div><b${dvs}>${val}</b></div>${extra}${rated?`<span class="lvt" title="Level of this value: LV1 (lowest) to LV7 (the best in the game)">LV${rated.band}</span>`:''}<span class="ric">${ico(icon)}</span></div>`
     : `<div class="dpsrow ${at}><div class="dh"><span class="rl">${ico(icon)}${label}</span><div class="dslot">${delta}</div><b>${val}</b></div></div>`;
 }
 function lineRow(icon, label, val, delta, k, rated=null, cell=false){
   const v = k==='boostTime' && !val ? '—' : fmtStat(k,val).replace(/\s?([a-z/%]+)$/i, '<small>$1</small>');
-  return ovRow(icon, label, v, delta ? `<span class="sd ${dcls(k,delta)}">${sgnStat(k,delta)}</span>` : '', rated, cell);
+  const old = val - delta;
+  return ovRow(icon, label, v, delta ? `<span class="sd ${dcls(k,delta)}"${dgradSd(dcls(k,delta), delta/(Math.abs(old)||1))} data-old="${k==='boostTime' && !old ? '—' : fmtStat(k,old)}">${sgnStat(k,delta)}</span>` : '', rated, cell);
 }
 function dpsRow(label, key, t, n, cell=false){
   const d = n[key]-t[key];
-  return ovRow('dps', label, fmt(n[key]), d ? `<span class="sd ${d>0?'up':'dn'}">${sgn(d)}</span>` : '', flag('maxRatings') ? rate(n[key], gameMax(key)) : null, cell);
+  return ovRow('dps', label, fmt(n[key]), d ? `<span class="sd ${d>0?'up':'dn'}"${dgradSd(d>0?'up':'dn', d/(t[key]||1))} data-old="${fmt(t[key])}">${sgn(d)}</span>` : '', flag('maxRatings') ? rate(n[key], gameMax(key)) : null, cell);
 }
 
 /* ---------- "shipQuality" experiment: how good the mounted modules are ---------- */
@@ -987,101 +1051,82 @@ function qualityRow(t, n){
 /* ---------- compare card ---------- */
 // "compactCard" experiment: stats as a two-column grid of short cells (label close to its value)
 const CARD_SHORT = { ammo:'Ammo', power:'Power', heat:'Heat', mag:'Magazine', dps:'DPS', dmg:'Damage', rate:'Fire rate', acc:'Accuracy', speed:'Speed', boostUse:'Boost use' };
-const ccell = (icon, label, full, val, old, dl='', dcl='') => `<div class="cst" title="${full}"><span class="cl">${icon}<span>${label}</span></span>`
-  + `<span class="cv">${old!=null && val==='—' ? '' : old!=null ? `<i>${old}</i><em>–</em>` : ''}<b>${old!=null && val==='—' ? old : val}</b></span><span class="cd ${dcl}">${dl}</span></div>`;
+// a card cell: label + value. In a diff the NEW module's value carries the colour / tint of the change (no +/- number: it is in the tooltip)
+const ccell = (icon, label, full, val, dl='', dcl='', rel=0) => {
+  const st = dmix(dcl, rel) ? dgradSd(dcl, rel) : '';
+  return `<div class="cst" title="${full}${dl && dl!=='=' ? ' · change ' + dl : ''}"><span class="cl">${icon}<span>${label}</span></span><span class="cv"><b${st ? ` class="dv"${st}` : ''}>${val}</b></span></div>`;
+};
 const cgrid = cells => `<div class="cgrid">${cells.join('')}</div>`;
 
 function renderCard(){
   // without a preview this is the selected socket; with one (hovering a mounted part to preview
   // removing it, or a different row's ✕) it's whatever socket PV actually targets
   const sockId = PV ? PV.sid : S.sel;
-  const sock = LY.byId[sockId] || selSock(), curA = S.att[sockId], cur = curA ? ITEM(curA.id) : null, compact = flag('compactCard');
-  // no socket-size chip: the socket is already selected in the list. `it`: the module whose icon + LV tag heads the
-  // title, same look as a row in the list above (leftRow); omitted for arms and the empty-socket / unknown-ship cases
-  // `it`: the module whose icon + LV tag + rarity fade head the title, same look as a row above (leftRow); the whole
-  // header carries --rc so both the icon block and the vertical tag pick up the colour, plus the fade behind the text
-  const head = (title, it) => `<div class="ch${it?' rar':''}"${it?` style="--rc:${rarCol(it)}"`:''}>${modIcTag(it)}<div class="cht">${title}</div></div>`;
-  let html;
-  $('#cardtag').classList.remove('show');
-  const collapse = !BODY.unknown && !PV && !cur;   // focus on an empty socket: nothing to say, the card folds away
+  const sock = LY.byId[sockId] || selSock(), curA = S.att[sockId], cur = curA ? ITEM(curA.id) : null;
+  // a window = header (same look as a socket-list row: icon, vertical LV tag, regular-weight name) + parameter rows.
+  // `it`: the module (rarity fade, LV tag); an arm gets its icon and nothing else
+  const head = it => {
+    if(!it) return '';
+    const mod = !isPylon(it.id);
+    return `<div class="ch${mod?' rar':''}"${mod?` style="--rc:${rarCol(it)}"`:''}>${mod ? modIcTag(it) : `<div class="ic">${ico('pylon')}</div>`}<div class="cht">${it.name}</div></div>`;
+  };
+  const win = (inner, cls='', tag='') => `<div class="cw ${cls}">${tag ? `<div class="wtag">${tag}${tag==='REMOVE' ? glyph('X') : ''}</div>` : ''}${inner}</div>`;
+  let html, mini = false, dual = false;
+  if(S.intSel!=null && S.focus==='slots' && !PV && !BODY.unknown && !noSel() && BODY.integrated?.[S.intSel]){
+    const m = BODY.integrated[S.intSel].mod;
+    $('#card').classList.remove('collapsed', 'dual', 'mini');
+    $('#card').innerHTML = win(head(m) + cgrid([ccell(ico(m.fam), 'Type', 'Module family', FAMILY[m.fam].label), ...modKeys(m).map(k => ccell(ico(STAT_META[k].icon), CARD_SHORT[k], STAT_META[k].label, fmtStat(k,m[k])))]), '', 'INTEGRATED');
+    return;
+  }
+  const collapse = !BODY.unknown && !PV && (!cur || noSel());   // focus on an empty socket: nothing to say, the card folds away
   $('#card').classList.toggle('collapsed', collapse);
   if(collapse){ $('#card').innerHTML = ''; return; }
   if(BODY.unknown){
-    html = head(shipName(BODY)) + `<div class="emptyc">Nothing is known about this ship yet.</div>`;   // (the card is hidden for unknown ships)
+    html = win(`<div class="ch"><div class="cht">${shipName(BODY)}</div></div><div class="emptyc">Nothing is known about this ship yet.</div>`);
   }else if(!PV){
-    if(!cur){
-      const n = cargoList().length;
-      html = head('EMPTY SOCKET') + `<div class="emptyc">This ${SIZE[sock.size].name.toLowerCase()} socket is free.<br>${n?`${glyph('A')} to browse the <b style="color:#fff">${n}</b> compatible ${TAB_LABEL[S.tab].toLowerCase()} in your cargo and compare them with your current build.`:`Nothing in the <b style="color:#fff">${TAB_LABEL[S.tab]}</b> tab fits a ${SIZE[sock.size].label} socket — try another tab (${glyph('LT')}${glyph('RT')}).`}</div>`;
-    }else if(curA.t==='pyl'){
-      const kids = (sock.kids||[]).map(k => `<span class="kidchip">${sg(k.size,13)} ${S.att[k.id]?ITEM(S.att[k.id].id).name:'<i>free</i>'}</span>`).join('');
-      html = head(cur.name.toUpperCase()) + `<div class="emptyc">${cur.type==='ext'?'Extension':'Split'} arm · ${SIZE[cur.size].label} in → ${outputsOf(cur).map(n=>SIZE[n].label).join(' + ')} out<div class="kids">${kids}</div></div>
-        <div class="cf">${holdsParts(S.sel)
-          ? `<span class="lockline">${ico('lock')} Holds ${partsOn(S.sel)} part${partsOn(S.sel)>1?'s':''} · only end parts can be changed: remove them first</span>`
-          : `<span>Select a cargo item to swap this arm</span><span>${glyph('A')}</span>`}</div>`;
+    if(curA.t==='pyl'){                                   // an arm: its kind and nothing else
+      html = win(`<div class="ch"><div class="ic">${ico('pylon')}</div><div class="cht">${cur.type==='ext' ? 'Extension Arm' : 'Split Arm'}</div></div>`, 'mini');
+      mini = true;
     }else{
-      // the family ("Gatling", "Laser"…) used to sit in the title; it's a parameter like any other, so it's a row here instead
-      const body = compact
-        ? cgrid([ccell(ico(cur.fam), 'Type', 'Module family', FAMILY[cur.fam].label), ...modKeys(cur).map(k => ccell(ico(STAT_META[k].icon), CARD_SHORT[k], STAT_META[k].label, fmtStat(k,cur[k])))])
-        : `<table><tr><th>STAT</th><th>INSTALLED</th></tr><tr><td>${ico(cur.fam)}Type</td><td>${FAMILY[cur.fam].label}</td></tr>${modKeys(cur).map(k=>`<tr><td>${ico(STAT_META[k].icon)}${STAT_META[k].label}</td><td>${fmtStat(k,cur[k])}</td></tr>`).join('')}</table>`;
-      html = head(cur.name.toUpperCase(), cur) + body;
+      // the family ("Gatling", "Laser"…) is a parameter like any other, so it's a row here instead of part of the title
+      html = win(head(cur) + cgrid([ccell(ico(cur.fam), 'Type', 'Module family', FAMILY[cur.fam].label), ...modKeys(cur).map(k => ccell(ico(STAT_META[k].icon), CARD_SHORT[k], STAT_META[k].label, fmtStat(k,cur[k])))]));
     }
   }else{
     const to = PV.to ? ITEM(PV.to) : null;
     const pylonCase = isPylon(PV.to||'') || (curA && curA.t==='pyl');
     const over = PV.t1.power - BODY.generator;
-    // "REMOVE" is the #cardtag tab above the card, not part of the module's own name/title
-    const title = to
-      ? `<span class="old">${cur?cur.name.toUpperCase():'EMPTY'}</span><span class="arrow">–</span>${to.name.toUpperCase()}`
-      : cur.name.toUpperCase();
-    const headIt = pylonCase ? null : (to || cur);   // icon/LV tag: the module coming in, or the one being removed
-    let table = '';
-    if(compact && !pylonCase){
-      table = cgrid((cur && to && cur.kind!==to.kind ? modKeys(to) : modKeys(cur,to)).map(k => {
+    // one row per parameter: old value, new value and the change (relative to the old value, for the colour gradient)
+    let rows;
+    if(!pylonCase){
+      rows = (cur && to && cur.kind!==to.kind ? modKeys(to) : modKeys(cur,to)).map(k => {
         const has = it => it && MOD_KEYS[it.kind].includes(k), val = it => has(it) ? fmtStat(k,it[k]) : '—';
-        let dl, dcl;
+        let dl, dcl, rel = 0;
         if(STAT_META[k].text){ dl = has(cur)&&has(to)&&cur[k]===to[k] ? '=' : '≠'; dcl = 'nt'; }
-        else { const d = mv(to,k)-mv(cur,k); dl = d ? sgnStat(k,d) : '='; dcl = d ? dcls(k,d) : 'nt'; }
-        return ccell(ico(STAT_META[k].icon), CARD_SHORT[k], STAT_META[k].label, val(to), cur ? val(cur) : null, dl, dcl);
-      }));
-    }else if(compact){
-      const outs = it => it && isPylon(it.id) ? `<span class="outs">${outputsOf(it).map(n=>sg(n,14)).join('')}</span>` : '—';
-      const cells = [ccell(ico('sockets'), 'Outputs', 'Output sockets of the arm', outs(to), outs(cur))];
-      for(const n of SIZE_ORDER){
-        const d = PV.t1.sock[n].free - T0.sock[n].free;
-        if(d) cells.push(ccell(sg(n,14), `Free ${SIZE[n].label}`, `Free ${SIZE[n].label} sockets`, PV.t1.sock[n].free, T0.sock[n].free, sgn(d), d>0?'up':'nt'));
-      }
-      table = cgrid(cells);
-    }else if(!pylonCase){
-      table = `<table><tr><th>STAT</th><th>${cur?'INSTALLED':''}</th><th>${to?'NEW':''}</th><th>Δ</th></tr>` + (cur && to && cur.kind!==to.kind ? modKeys(to) : modKeys(cur,to)).map(k=>{   // different module types: only the new one's params
-        const has = it => it && MOD_KEYS[it.kind].includes(k);
-        const cell = it => has(it) ? fmtStat(k,it[k]) : '—';
-        let dl;
-        if(STAT_META[k].text) dl = `<td class="dl nt">${has(cur)&&has(to)&&cur[k]===to[k]?'=':'≠'}</td>`;
-        else { const d = mv(to,k)-mv(cur,k); dl = `<td class="dl ${d?dcls(k,d):'nt'}">${d?sgnStat(k,d):'='}</td>`; }
-        return `<tr><td>${ico(STAT_META[k].icon)}${STAT_META[k].label}</td><td class="o">${cell(cur)}</td><td>${cell(to)}</td>${dl}</tr>`;
-      }).join('') + `</table>`;
+        else { const o = mv(cur,k), d = mv(to,k)-o; dl = d ? sgnStat(k,d) : '='; dcl = d ? dcls(k,d) : 'nt'; rel = o ? d/Math.abs(o) : (d ? 1 : 0); }
+        return { icon:ico(STAT_META[k].icon), label:CARD_SHORT[k], full:STAT_META[k].label, o:val(cur), n:val(to), dl, dcl, rel };
+      });
     }else{
-      const outs = it => it && isPylon(it.id) ? `<span class="outs rt">${outputsOf(it).map(n=>sg(n,14)).join('')}</span>` : '—';
-      let rows = `<tr><td>${ico('sockets')}Output sockets</td><td class="o">${outs(cur)}</td><td>${outs(to)}</td><td class="dl nt"></td></tr>`;
+      const outs = it => it && isPylon(it.id) ? `<span class="outs">${outputsOf(it).map(n=>sg(n,14)).join('')}</span>` : '—';
+      rows = [{ icon:ico('sockets'), label:'Outputs', full:'Output sockets of the arm', o:outs(cur), n:outs(to), dl:'', dcl:'nt', rel:0 }];
       for(const n of SIZE_ORDER){
         const d = PV.t1.sock[n].free - T0.sock[n].free;
-        if(d) rows += `<tr><td>${sg(n,14)}Free ${SIZE[n].label} sockets</td><td class="o">${T0.sock[n].free}</td><td>${PV.t1.sock[n].free}</td><td class="dl ${d>0?'up':'nt'}">${sgn(d)}</td></tr>`;
+        if(d) rows.push({ icon:sg(n,14), label:`Free ${SIZE[n].label}`, full:`Free ${SIZE[n].label} sockets`, o:T0.sock[n].free, n:PV.t1.sock[n].free, dl:sgn(d), dcl:d>0?'up':'nt', rel:d/(T0.sock[n].free||1) });
       }
-      table = `<table><tr><th>SOCKETS</th><th>NOW</th><th>AFTER</th><th>Δ</th></tr>${rows}</table>`;
     }
     const back = PV.ret.filter((id,i)=>!(i===0 && !pylonCase));
     const backTxt = back.length && pylonCase ? `<div class="retline">Returns to cargo: ${PV.ret.map(id=>ITEM(id).name).join(', ')}</div>` : '';
-    const verdict = to ? (cur?'READY TO REPLACE':'READY TO EQUIP') : '';   // removing needs no verdict line: saves space for the parameters
     const foot = !PV.room
       ? `<span>CARGO <b class="no">${CARGO_SLOTS} / ${CARGO_SLOTS}</b></span><span class="no">CARGO FULL · NO ROOM FOR RETURNED MODULES</span>`
-      : flag('overview')   // power figures live in the overview: the card only gives the verdict
-      ? (over>0 ? `<span class="no">NOT ENOUGH POWER · NEEDS ${over} MORE</span>` : (verdict ? `<span class="ok">${verdict}</span>` : ''))
-      : over>0
-      ? `<span>POWER <b>${T0.power}</b> ➜ <b class="no">${PV.t1.power} / ${BODY.generator}</b></span><span class="no">NOT ENOUGH POWER (${over} OVER)</span>`
-      : (verdict ? `<span>POWER <b>${T0.power}</b> ➜ <b>${PV.t1.power} / ${BODY.generator}</b></span><span class="ok">${verdict}</span>` : '');
-    $('#cardtag').classList.toggle('show', !to);   // "REMOVE" is a tab above the card, so it never pushes the data down
-    html = head(title, headIt) + table + backTxt + (foot ? `<div class="cf">${foot}</div>` : '');
+      : (over>0 ? `<span class="no">NOT ENOUGH POWER · NEEDS ${over} MORE</span>` : '');
+    const footHtml = foot ? `<div class="cf">${foot}</div>` : '';
+    // old module on the left, new module on the right; a removal has only the old one (its change is the effect of removing it)
+    const oldWin = cur ? win(head(cur) + cgrid(rows.map(r => ccell(r.icon, r.label, r.full, r.o, to ? '' : r.dl))) + (to ? '' : backTxt + footHtml), to ? 'old tag-cur' : 'old tag-rem', to ? 'CURRENT' : 'REMOVE') : '';
+    const newWin = to ? win(head(to) + cgrid(rows.map(r => ccell(r.icon, r.label, r.full, r.n, r.dl, r.dcl, r.rel))) + backTxt + footHtml, 'new tag-new', 'NEW') : '';
+    dual = !!(cur && to);
+    html = oldWin + newWin;
   }
+  $('#card').classList.toggle('dual', dual);
+  $('#card').classList.toggle('mini', mini);
   $('#card').innerHTML = html;
 }
 
@@ -1102,13 +1147,11 @@ function renderBottom(){
     if(!flag('bodyButton')) left += H(glyph('A'),'Body list','data-act="a"');
     if(flag('undoRedo')) left += H(glyph('X'),'Reset build','data-act="x"');
   }else if(S.focus==='slots'){
-    left += H(glyph('dpad'),'Select socket','data-act="none"');
-    left += H(glyph('A'), curA?'Replace':'Choose part','data-act="a"', holdsParts(S.sel)?'off':'');
-    left += H(glyph('X'),'Unequip','data-act="x"', curA && !holdsParts(S.sel)?'':'off');
+    left += H(glyph('A'), curA?'Replace':'Choose part','data-act="a"', holdsParts(S.sel) || S.intSel!=null ?'off':'');
+    left += H(glyph('X'),'Remove','data-act="x"', curA && !holdsParts(S.sel) && S.intSel==null ?'':'off');
     if(flag('listModes')) left += H(glyph('SORT'),'Sort','data-act="sort"');
     if(d==='gamepad') left += H(glyph('LT')+glyph('RT'),'Ship','data-act="none"');   // gamepad only (keyboard: Tab / Shift+Tab still work, without a hint)
   }else{
-    left += H(glyph('dpad'),'Compare','data-act="none"');
     left += H(glyph('A'), !cm ? 'Equip' : !room ? 'Cargo full' : !fits ? 'Not enough power' : curA?'Replace':'Equip','data-act="a"', (!cm||!fits)?'off':'');
     left += H(glyph('B'),'Back','data-act="b"');
     if(flag('keyStats') && S.tab!=='pylon') left += H(glyph('SORT'),'Sort','data-act="sort"');
@@ -1188,17 +1231,27 @@ function toast(msg,kind=''){
 }
 function flash(sid){ S.flash = sid; S.flashT = performance.now(); renderAll(); setTimeout(()=>{ if(S.flash===sid){ S.flash=null; renderAll(); } },900); }
 
-function selectSlot(id){ S.sel = id; S.cargoIdx = 0; S.hoverCargo = null; LY = layout(S.att); ensureTab(); }
+function selectSlot(id){ S.sel = id; S.intSel = null; S.cargoIdx = 0; S.hoverCargo = null; LY = layout(S.att); ensureTab(); }
 function moveSel(dir){
   S.hoverCargo = S.hoverRemove = null;
   if(S.focus==='slots'){
+    // the integrated modules close the list: they can be walked through (their info shows in the card) but never changed
+    const ints = BODY.unknown ? [] : (BODY.integrated || []);
+    if(S.intSel!=null){
+      const j = S.intSel + dir;
+      if(j < 0){ S.intSel = null; S.hoverSlot = S.sel; }      // back up to the last real socket
+      else if(j < ints.length) S.intSel = j;
+      renderAll(); $('.slot.sel')?.scrollIntoView({ block:'nearest' });
+      return;
+    }
     const order = navOrder(LY), i = order.indexOf(S.sel);
+    if(dir>0 && i===order.length-1 && ints.length){ S.intSel = 0; S.hoverSlot = null; renderAll(); $('.slot.sel')?.scrollIntoView({ block:'nearest' }); return; }
     if(dir<0 && i<=0){ S.focus = 'body'; S.hoverSlot = null; renderAll(); return; }
     const j = Math.max(0,Math.min(order.length-1,i+dir));
     if(j!==i) selectSlot(order[j]);
     // keyboard/gamepad navigation counts as "hovering" the row you land on, same as the mouse: computePreview()
     // shows the removal preview for a mounted module under S.hoverSlot regardless of which device set it
-    S.hoverSlot = S.sel;
+    if(!noSel()) S.hoverSlot = S.sel;
   }else{
     const n = cargoList().length; if(!n) return;
     S.cargoIdx = Math.max(0,Math.min(n-1,S.cargoIdx+dir));
@@ -1382,6 +1435,7 @@ function act(name){
     case 'a':
       if(S.focus==='slots'){
         if(unknownShip()) return;
+        if(S.intSel!=null){ toast('INTEGRATED · CANNOT BE CHANGED','info'); return; }
         if(holdsParts(S.sel)){ toast(`LOCKED · ${partsOn(S.sel)} PART${partsOn(S.sel)>1?'S':''} ON THIS ARM · REMOVE THEM FIRST`,'bad'); return; }
         if(!cargoList().length){ toast(`NOTHING FOR A ${SIZE[selSock().size].label} SOCKET IN THIS TAB`,'info'); return; }
         S.focus='cargo'; S.cargoIdx=0; renderAll();
@@ -1389,7 +1443,7 @@ function act(name){
       break;
     case 'b': if(S.focus==='cargo'){ S.focus='slots'; renderAll(); } break;
     case 'left': if(S.focus==='cargo'){ S.focus='slots'; renderAll(); } break;
-    case 'x': unequip(S.sel); break;
+    case 'x': if(S.intSel!=null){ toast('INTEGRATED · CANNOT BE CHANGED','info'); break; } unequip(S.sel); break;
     case 'sort': if(S.focus==='cargo') cycleSort(); else cycleListMode(1); break;   // same key sorts the list that has focus
     // LT / RT (Shift+Tab / Tab): categories while the cargo is open, otherwise they switch the ship
     case 'catNext': if(S.focus==='cargo') cycleCat(1); else stepBody(1); break;
@@ -1412,7 +1466,7 @@ function switchBody(id){
   if(!BODIES[id] || id===BODY.id) return;
   S.builds[BODY.id] = S.att;                 // every body keeps its own build
   BODY = BODIES[id]; S.att = S.builds[id] || {};
-  S.cargoIdx = 0; S.hoverCargo = S.hoverSlot = S.hoverRemove = null;
+  S.cargoIdx = 0; S.hoverCargo = S.hoverSlot = S.hoverRemove = null; S.intSel = null;
   S.sel = navOrder(layout(S.att))[0];
   Object.assign(S.rot, homeRot());
   window.setShipBody?.();
@@ -1493,6 +1547,7 @@ function holdDone(id){
    ===================================================================== */
 const stage = $('#stage');
 stage.addEventListener('pointermove',e=>{
+  if(S.lastInput!=='kbm') setLastInput('kbm');
   const row = e.target.closest?.('.cg-row'), sl = e.target.closest?.('[data-slot]'), un = e.target.closest?.('[data-unq]');
   const hc = row?.dataset.item || null, hr = un?.dataset.unq || null;
   let hs = sl?.dataset.slot || null;
@@ -1528,6 +1583,7 @@ stage.addEventListener('click',e=>{
   if(t.closest('[data-sort]')){ cycleSort(); return; }
   const lb = t.closest('.lab3d'); if(lb){ selectSlot(lb.dataset.slot); S.focus='slots'; renderAll(); return; }
   if(t.closest('#shipbox')){ const id = pickSlot(e); if(id){ selectSlot(id); S.focus='slots'; renderAll(); } return; }
+  const ir = t.closest('[data-int]'); if(ir){ S.intSel = +ir.dataset.int; S.hoverSlot = null; S.focus = 'slots'; renderAll(); return; }
   const sl = t.closest('[data-slot]'); if(sl){ selectSlot(sl.dataset.slot); S.focus='slots'; if(flag('slideCargo') && !t.closest('#shipbox')) act('a'); else renderAll(); return; }
   const row = t.closest('.cg-row'); if(row){ S.focus='cargo'; S.cargoIdx=+row.dataset.i; equip(row.dataset.item); return; }
   const tab = t.closest('[data-tab]'); if(tab){ S.tab = tab.dataset.tab; S.cargoIdx = 0; renderAll(); return; }
@@ -1567,6 +1623,7 @@ $('#shipbox').addEventListener('dblclick',()=>{ Object.assign(S.rot,homeRot()); 
 addEventListener('keydown',e=>{
   if(e.repeat && !['ArrowUp','ArrowDown','w','s'].includes(e.key)) return;
   if(S.inputPref==='auto' && S.device!=='keyboard'){ S.device='keyboard'; renderTop(); renderBottom(); }
+  setLastInput('kbm');
   const k = e.key;
   if(S.intro){ if(['Enter',' ','Escape','Backspace'].includes(k)){ e.preventDefault(); closeIntro(); } return; }
   if((e.ctrlKey||e.metaKey) && !S.view && (k==='z'||k==='Z'||k==='y'||k==='Y')){ e.preventDefault(); act(k.toLowerCase()==='y' || e.shiftKey ? 'redo' : 'undo'); return; }
@@ -1599,6 +1656,7 @@ function pollPad(){
       if(edge){
         gpRepeat[k] = now+380;
         if(S.inputPref==='auto' && S.device!=='gamepad'){ S.device='gamepad'; renderTop(); renderBottom(); }
+        setLastInput('pad');
         if(S.view){ if(k==='b'||k==='view') setView(false); gpPrev[k]=cur[k]; continue; }
         if(S.intro){ if(k==='a'||k==='b') closeIntro(); gpPrev[k]=cur[k]; continue; }
         ({ up:()=>act('up'), down:()=>act('down'), left:()=>act('left'), right:()=>act('right'), a:()=>act('a'), b:()=>act('b'), x:()=>act('x'),

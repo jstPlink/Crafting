@@ -19,6 +19,8 @@ class NoCache(http.server.SimpleHTTPRequestHandler):
 
     def do_POST(self):
         """POST /save-rarity {colors, presets}: rewrites the RARITY_DEFAULT / RARITY_PRESETS lines in app.js (the RARITY menu's SAVE AS DEFAULT)."""
+        if self.path == '/save-diff':
+            return self.save_diff()
         if self.path != '/save-rarity':
             return self.send_error(404)
         try:
@@ -37,6 +39,25 @@ class NoCache(http.server.SimpleHTTPRequestHandler):
             new, n = re.subn(r"^const RARITY_\w+ = .*// @" + marker, lambda m: line, new, flags=re.M)
             if n != 1:
                 return self.send_error(500)
+        f.write_text(new, encoding='utf-8')
+        self.send_response(204)
+        self.end_headers()
+
+    def save_diff(self):
+        """POST /save-diff {t1, t2, low, worseMid, betterMid, worseHigh, betterHigh}: rewrites the DIFF_DEFAULT line in app.js (the DIFF menu's SAVE AS DEFAULT)."""
+        try:
+            d = json.loads(self.rfile.read(int(self.headers.get('Content-Length', 0))))
+            cols = ('low', 'worseMid', 'betterMid', 'worseHigh', 'betterHigh')
+            assert all(isinstance(d[k], str) and re.fullmatch(r'#[0-9a-fA-F]{6}', d[k]) for k in cols)
+            assert all(isinstance(d[k], (int, float)) for k in ('t1', 't2')) and 0 <= d['t1'] < d['t2'] <= 100
+        except Exception:
+            return self.send_error(400)
+        out = {'t1': d['t1'], 't2': d['t2'], **{k: d[k].lower() for k in cols}}
+        line = 'const DIFF_DEFAULT = ' + json.dumps(out, separators=(',', ':')) + ';   // @diff-defaults'
+        f = ROOT / 'app.js'
+        new, n = re.subn(r'^const DIFF_DEFAULT = .*// @diff-defaults', lambda m: line, f.read_text(encoding='utf-8'), flags=re.M)
+        if n != 1:
+            return self.send_error(500)
         f.write_text(new, encoding='utf-8')
         self.send_response(204)
         self.end_headers()

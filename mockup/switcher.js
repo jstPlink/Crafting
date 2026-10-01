@@ -30,11 +30,11 @@
   const css = document.createElement('style');
   css.textContent = `
     /* the version button: !important because older versions style #build as a tiny grey label */
-    #stage #build,#stage #featbtn,#stage #rarbtn{cursor:pointer;pointer-events:auto;font-size:20px!important;font-weight:700;letter-spacing:.08em!important;color:#dfe5ea!important;
+    #stage #build,#stage #featbtn,#stage #rarbtn,#stage #diffbtn{cursor:pointer;pointer-events:auto;font-size:20px!important;font-weight:700;letter-spacing:.08em!important;color:#dfe5ea!important;
       padding:7px 16px;background:rgba(10,12,15,.75);border:1px solid #4a4f55}
-    #stage #build::after,#stage #featbtn::after,#stage #rarbtn::after{content:" ▾";color:var(--accent-2)}
-    #stage #build:hover,#stage #build.open,#stage #featbtn:hover,#stage #featbtn.open,#stage #rarbtn:hover,#stage #rarbtn.open{border-color:var(--accent-2)}
-    #stage #featbtn,#stage #rarbtn{position:absolute;z-index:5;font-family:inherit;line-height:normal}
+    #stage #build::after,#stage #featbtn::after,#stage #rarbtn::after,#stage #diffbtn::after{content:" ▾";color:var(--accent-2)}
+    #stage #build:hover,#stage #build.open,#stage #featbtn:hover,#stage #featbtn.open,#stage #rarbtn:hover,#stage #diffbtn:hover,#stage #rarbtn.open,#stage #diffbtn.open{border-color:var(--accent-2)}
+    #stage #featbtn,#stage #rarbtn,#stage #diffbtn{position:absolute;z-index:5;font-family:inherit;line-height:normal}
     /* two separate windows, each under its own button */
     .vwinp{position:absolute;top:160px;z-index:60;display:none;max-height:820px;overflow-y:auto;background:#0a0c0f;border:1px solid var(--accent);
       font-size:17px;letter-spacing:.03em;color:#dfe5ea;scrollbar-width:thin;scrollbar-color:#3a3f46 transparent}
@@ -42,6 +42,10 @@
     #verpanel{right:80px;width:430px}
     #featpanel{width:560px}
     #rarpanel{width:460px}
+    #diffpanel{width:460px}
+    .vwinp .nrow{display:flex;align-items:center;gap:14px;padding:9px 16px;border-top:1px solid #16181b}
+    .vwinp .nrow span{flex:1;font-size:16px}
+    .vwinp .nrow input[type=number]{width:72px;height:30px;background:#0f1115;color:#fff;border:1px solid #4a4f55;font:inherit;font-size:17px;padding:0 6px;text-align:right}
     .vwinp .rrow{display:flex;align-items:center;gap:14px;padding:9px 16px;border-top:1px solid #16181b}
     .vwinp .rrow b{flex:none;width:52px;text-align:center;font-size:15px;letter-spacing:.06em;padding:2px 0;color:#0a0c0f}
     .vwinp .rrow input[type=color]{width:64px;height:30px;padding:0;border:1px solid #4a4f55;background:none;cursor:pointer}
@@ -79,6 +83,10 @@
   const rarBtn = rar ? mk('button', 'rarbtn') : null;
   const rarPanel = rar ? mk('div', 'rarpanel', 'vwinp') : null;
   if(rarBtn) rarBtn.textContent = 'RARITY';
+  const dif = window.craftingDiff;                        // diff colours and thresholds: dropdown next to RARITY
+  const difBtn = dif ? mk('button', 'diffbtn') : null;
+  const difPanel = dif ? mk('div', 'diffpanel', 'vwinp') : null;
+  if(difBtn) difBtn.textContent = 'DIFF';
 
   // the FEATURES button sits just left of the version button, same row; its window hangs under it
   function place(){
@@ -91,6 +99,11 @@
       rarBtn.style.top = label.offsetTop + 'px';
       rarBtn.style.right = (right + label.offsetWidth + 10 + featBtn.offsetWidth + 10) + 'px';
       rarPanel.style.right = rarBtn.style.right;
+      if(difBtn){
+        difBtn.style.top = label.offsetTop + 'px';
+        difBtn.style.right = (right + label.offsetWidth + 10 + featBtn.offsetWidth + 10 + rarBtn.offsetWidth + 10) + 'px';
+        difPanel.style.right = difBtn.style.right;
+      }
     }
   }
 
@@ -155,6 +168,38 @@
     rarPanel.addEventListener('pointerdown', e => e.stopPropagation());
   }
 
+  function renderDiff(msg){
+    const d = dif.get(), def = dif.defaults();
+    const rows = [['low','Below T1 (barely changed)'],['betterMid','T1 – T2 · better'],['worseMid','T1 – T2 · worse'],['betterHigh','T2 and more · better'],['worseHigh','T2 and more · worse']];
+    let h = `<h4>DIFF COLOURS · BY SIZE OF THE CHANGE</h4>`;
+    h += `<div class="nrow"><span>T1 · up to this % of change stays <b>${esc(d.low)}</b></span><input type="number" min="0" max="99" step="1" data-dnum="t1" value="${d.t1}"></div>`;
+    h += `<div class="nrow"><span>T2 · up to this % the middle colours apply</span><input type="number" min="1" max="100" step="1" data-dnum="t2" value="${d.t2}"></div>`;
+    for(const [k, name] of rows) h += `<div class="rrow"><b style="background:${d[k]};width:auto;padding:2px 10px;flex:1;text-align:left;letter-spacing:.02em">${esc(name)}</b><input type="color" data-dcol="${k}" value="${d[k]}"><code>${d[k]}${d[k] !== def[k] ? ' · edited' : ''}</code></div>`;
+    h += `<div class="racts"><button data-dreset>RESET</button><button class="pri" data-dsave>SAVE AS DEFAULT</button></div>`;
+    h += `<div class="vfoot">${esc(msg || 'Changes apply live and stay in this browser. SAVE AS DEFAULT writes them into the app code (local dev server only).')}</div>`;
+    difPanel.innerHTML = h;
+  }
+  if(difPanel){
+    difPanel.addEventListener('input', e => {
+      const t = e.target;
+      if(t.dataset?.dcol){ dif.set(t.dataset.dcol, t.value); const row = t.closest('.rrow'); row.querySelector('b').style.background = t.value; row.querySelector('code').textContent = t.value + (t.value !== dif.defaults()[t.dataset.dcol] ? ' · edited' : ''); }
+      else if(t.dataset?.dnum){
+        const v = Math.max(0, Math.min(100, +t.value)), o = dif.get();
+        const k = t.dataset.dnum;
+        if(isFinite(v) && (k === 't1' ? v < o.t2 : v > o.t1)) dif.set(k, v);
+      }
+    });
+    difPanel.addEventListener('click', async e => {
+      e.stopPropagation();
+      if(e.target.closest('[data-dreset]')){ dif.reset(); renderDiff('Back to the saved defaults.'); }
+      else if(e.target.closest('[data-dsave]')){
+        try{ await dif.saveDefault(); renderDiff('Saved: these colours and thresholds are now the app defaults (written to app.js). Commit to keep them.'); }
+        catch(err){ renderDiff('Could not save (' + err.message + '). Saving only works on the local dev server.'); }
+      }
+    });
+    difPanel.addEventListener('pointerdown', e => e.stopPropagation());
+  }
+
   function go(v){ location.href = root + 'versions/' + v + '/index.html'; }
   for(const p of [verPanel, featPanel]) if(p){
     p.addEventListener('click', e => {
@@ -172,6 +217,7 @@
     verPanel.classList.toggle('show', which==='ver'); label.classList.toggle('open', which==='ver');
     if(featPanel){ featPanel.classList.toggle('show', which==='feat'); featBtn.classList.toggle('open', which==='feat'); }
     if(rarPanel){ rarPanel.classList.toggle('show', which==='rar'); rarBtn.classList.toggle('open', which==='rar'); }
+    if(difPanel){ difPanel.classList.toggle('show', which==='diff'); difBtn.classList.toggle('open', which==='diff'); }
   };
   label.title = 'Versions';
   label.addEventListener('click', e => { e.stopPropagation(); renderVersions(); open(verPanel.classList.contains('show') ? null : 'ver'); });
@@ -185,6 +231,11 @@
     rarBtn.addEventListener('click', e => { e.stopPropagation(); place(); renderRarity(); open(rarPanel.classList.contains('show') ? null : 'rar'); });
     rarBtn.addEventListener('pointerdown', e => e.stopPropagation());
   }
-  document.addEventListener('click', e => { if(rarPanel?.contains(e.target)) return; if(!verPanel.contains(e.target) && !featPanel?.contains(e.target)) open(null); });
+  if(difBtn){
+    difBtn.title = 'Diff colours and thresholds';
+    difBtn.addEventListener('click', e => { e.stopPropagation(); place(); renderDiff(); open(difPanel.classList.contains('show') ? null : 'diff'); });
+    difBtn.addEventListener('pointerdown', e => e.stopPropagation());
+  }
+  document.addEventListener('click', e => { if(rarPanel?.contains(e.target) || difPanel?.contains(e.target)) return; if(!verPanel.contains(e.target) && !featPanel?.contains(e.target)) open(null); });
   place(); setTimeout(place, 300); document.fonts?.ready.then(place);   // the label width depends on the web font
 })();
