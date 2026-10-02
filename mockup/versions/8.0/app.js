@@ -875,7 +875,7 @@ function renderRight(){
     <div class="ov-body">
       <div class="dpsblock">
         <div class="ovgrid c1">
-          ${ovRow('value','SHIP VALUE', fmt(n.value), dl(dcls('value', n.value-t.value), n.value!==t.value ? sgn(n.value-t.value) : '', (n.value-t.value)/(t.value||1), fmt(t.value)), rated ? rate(n.value, gameMax('value')) : null, true)}
+          ${ovRow('value','SHIP VALUE', fmt(n.value), dl(dcls('value', n.value-t.value), n.value!==t.value ? sgn(n.value-t.value) : '', (n.value-t.value)/(t.value||1), fmt(t.value)), rated ? rate(t.value, gameMax('value')) : null, true)}
         </div>
       </div>
       <div class="dpsblock">
@@ -890,7 +890,7 @@ function renderRight(){
         <div class="ovgrid c1">
           ${ovRow('heat','FIRE TIME', secs(n.fireTime), dl(fdCls, fdTxt, isFinite(fd) ? fd/(t.fireTime||1) : 1, oldSecs(t.fireTime)), null, true)}
           ${dpsRow('PRIMARY DPS','priDps',t,n,true)}${dpsRow('SECONDARY DPS','secDps',t,n,true)}
-          ${lineRow('speed','MAX SPEED',n.maxSpeed,n.maxSpeed-t.maxSpeed,'maxSpeed', rated ? rate(n.maxSpeed, gameMax('speed')) : null, true)}
+          ${lineRow('speed','MAX SPEED',n.maxSpeed,n.maxSpeed-t.maxSpeed,'maxSpeed', rated ? rate(t.maxSpeed, gameMax('speed')) : null, true)}   <!-- the band (gradient + LV) follows the CURRENT value, which does not change during a diff -->
           ${lineRow('boost','BOOST DURATION',n.boostTime,n.boostTime-t.boostTime,'boostTime', null, true)}
         </div>
       </div>
@@ -925,7 +925,7 @@ function renderRight(){
       const dc = d ? dcls(k,d) : 'nt', dst = d ? dgradSd(dc, d/(Math.abs(mounted[k])||1)) : '';
       const dh = '';
       const best = !byPow && bestOk && fits && statOf(m)===top ? `<span class="best" title="Highest ${STAT_META[k].label} among the parts you can mount here">BEST</span>` : '';
-      sub = `<div class="sub"><span>${byPow?'POWER':k==='dps'?'DPS':'SPEED'} ${dst ? `<span class="ov">${mounted[k]}</span><span class="ovd">–</span>` : ''}<b${dst ? ` class="dv"${dst}` : ''}>${m[k]}</b></span>${best}</div>`;
+      sub = `<div class="sub"><span>${byPow?'POWER':k==='dps'?'DPS':'SPEED'} ${dst ? `<span class="ov">${mounted[k]}</span><span class="ovd">–</span>` : ''}<b${dst ? ` class="dv"${dst} data-d="${dc}"` : ''}>${m[k]}</b></span>${best}</div>`;
     }
     const qty = !pyl && flag('stackBadge') ? `<span class="qty" title="In cargo">×${S.cargo[m.id]}</span>` : '';
     return `<div class="cg-row slot ${two?'two':''} ${pyl?'pyl':KIND[m.kind].cls+' rar'} ${focus?'sel':''} ${hov?'hov':''} ${fits?'':'nopow'}" data-item="${m.id}" data-i="${i}"${pyl?'':` style="--rc:${rarCol(m)}"`}>
@@ -1014,14 +1014,17 @@ function powerTicks(cur, next, cls){
 const camel = t => String(t).toLowerCase().split(' ').map(w => w==='dps' ? 'DPS' : w.charAt(0).toUpperCase() + w.slice(1)).join(' ');   // "FIRE TIME" -> "Fire Time", "PRIMARY DPS" -> "Primary DPS"
 function ovRow(icon, label, val, delta='', rated=null, cell=false, extra=''){
   label = camel(label);
-  // the change is no longer a +/- badge: the new value itself takes its colour and tint (style carried by the badge markup)
+  // the change is no longer a +/- badge. While previewing, the CURRENT value stays exactly where it is (right, same colour);
+  // the NEW value appears to its left and is the one that takes the diff colour and tint (style carried by the badge markup)
   const dm = /<span class="sd ([a-z]+)"( style="[^"]*")?/.exec(delta || '');
-  const dvs = dm && dm[1]!=='off' && dm[1]!=='nt' && dm[2] ? ` class="dv"${dm[2]}` : '';
   const om = /data-old="([^"]*)"/.exec(delta || '');
-  const dold = dvs && om && om[1] ? `<span class="ov">${om[1]}</span><span class="ovd">–</span>` : '';
+  const diff = dm && dm[1]!=='off' && dm[1]!=='nt' && dm[2] && om && om[1];
+  const smallUnit = s => s.replace(/\s?([a-z/%]+)$/i, '<small>$1</small>');
+  const dnew = diff ? `<b class="dv"${dm[2]} data-d="${dm[1]}">${val}</b>` : '';   // data-d: up = better, dn = worse (CSS draws the arrow)
+  const shown = diff ? smallUnit(om[1]) : val;   // data-old is the plain text of the value the figure has now
   const at = `${rated?'rated-bg':''}" ${rated?rated.attrs:''}`;
   return cell
-    ? `<div class="ovc ${at}><span class="rl">${label}</span><div class="cv"><div class="dslot">${dold}</div><b${dvs}>${val}</b></div>${extra}${rated?`<span class="lvt" title="Level of this value: LV1 (lowest) to LV7 (the best in the game)">LV${rated.band}</span>`:''}<span class="ric">${ico(icon)}</span></div>`
+    ? `<div class="ovc ${at}><span class="rl">${label}</span><div class="cv"><div class="dslot">${dnew}</div><b>${shown}</b></div>${extra}${rated?`<span class="lvt" title="Level of this value: LV1 (lowest) to LV7 (the best in the game)">LV${rated.band}</span>`:''}<span class="ric">${ico(icon)}</span></div>`
     : `<div class="dpsrow ${at}><div class="dh"><span class="rl">${ico(icon)}${label}</span><div class="dslot">${delta}</div><b>${val}</b></div></div>`;
 }
 function lineRow(icon, label, val, delta, k, rated=null, cell=false){
@@ -1031,7 +1034,7 @@ function lineRow(icon, label, val, delta, k, rated=null, cell=false){
 }
 function dpsRow(label, key, t, n, cell=false){
   const d = n[key]-t[key];
-  return ovRow('dps', label, fmt(n[key]), d ? `<span class="sd ${d>0?'up':'dn'}"${dgradSd(d>0?'up':'dn', d/(t[key]||1))} data-old="${fmt(t[key])}">${sgn(d)}</span>` : '', flag('maxRatings') ? rate(n[key], gameMax(key)) : null, cell);
+  return ovRow('dps', label, fmt(n[key]), d ? `<span class="sd ${d>0?'up':'dn'}"${dgradSd(d>0?'up':'dn', d/(t[key]||1))} data-old="${fmt(t[key])}">${sgn(d)}</span>` : '', flag('maxRatings') ? rate(t[key], gameMax(key)) : null, cell);   // band of the CURRENT value, not the previewed one
 }
 
 /* ---------- "shipQuality" experiment: how good the mounted modules are ---------- */
@@ -1054,7 +1057,7 @@ const CARD_SHORT = { ammo:'Ammo', power:'Power', heat:'Heat', mag:'Magazine', dp
 // a card cell: label + value. In a diff the NEW module's value carries the colour / tint of the change (no +/- number: it is in the tooltip)
 const ccell = (icon, label, full, val, dl='', dcl='', rel=0) => {
   const st = dmix(dcl, rel) ? dgradSd(dcl, rel) : '';
-  return `<div class="cst" title="${full}${dl && dl!=='=' ? ' · change ' + dl : ''}"><span class="cl">${icon}<span>${label}</span></span><span class="cv"><b${st ? ` class="dv"${st}` : ''}>${val}</b></span></div>`;
+  return `<div class="cst" title="${full}${dl && dl!=='=' ? ' · change ' + dl : ''}"><span class="cl">${icon}<span>${label}</span></span><span class="cv"><b${st ? ` class="dv"${st} data-d="${dcl}"` : ''}>${val}</b></span></div>`;
 };
 const cgrid = cells => `<div class="cgrid">${cells.join('')}</div>`;
 

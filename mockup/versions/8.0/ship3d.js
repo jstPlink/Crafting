@@ -91,12 +91,16 @@ function buildHull(body){
 }
 
 /* ---------- modules ---------- */
+// style: 'normal' | 'good' | 'bad' | 'rem' | 'ghostgood' | 'ghostbad' (the see-through copy of the part you are about to mount)
 function buildModule(kind, size, style){
   const g = new THREE.Group();
-  const tint = style==='good' ? 0x2f9e4d : style==='bad' ? 0xc23a3a : style==='rem' ? 0x5a3030 : KIND_COL[kind];
+  const ghost = style.startsWith('ghost'), base = ghost ? style.slice(5) : style;
+  const tint = base==='good' ? (ghost ? 0x63e07a : 0x2f9e4d) : base==='bad' ? (ghost ? 0xff5a5a : 0xc23a3a) : base==='rem' ? 0x5a3030 : KIND_COL[kind];
   const lit = style!=='normal';
-  const m = stdMat(tint,.4,.4, lit ? { emissive:tint, emissiveIntensity:.45 } : {});
-  const dark = stdMat(0x1b1f24,.4,.5);
+  const seeThrough = ghost ? { transparent:true, opacity:.42, depthWrite:false } : {};
+  const m = stdMat(tint,.4,.4, lit ? { emissive:tint, emissiveIntensity:ghost ? .6 : .45, ...seeThrough } : {});
+  const dark = stdMat(0x1b1f24,.4,.5, seeThrough);
+  const basic = c => new THREE.MeshBasicMaterial({ color:c, ...seeThrough });
   const cyl = (r1,r2,len,mat) => { const c = new THREE.Mesh(new THREE.CylinderGeometry(r1,r2,len,16), mat); c.rotation.x = Math.PI/2; return c; };
   if(kind==='primary'){
     g.add(new THREE.Mesh(new THREE.BoxGeometry(.36,.36,.55), m));
@@ -109,8 +113,8 @@ function buildModule(kind, size, style){
     const body = cyl(.36,.4,.8,m); body.position.z = -.1; g.add(body);
     const noz = cyl(.42,.3,.22,dark); noz.position.z = .4; g.add(noz);
     const glowCol = style==='normal' ? 0x9fd4ff : tint;
-    const glow = new THREE.Mesh(new THREE.CircleGeometry(.27,20), new THREE.MeshBasicMaterial({ color:glowCol })); glow.position.z = .52; glow.userData.noOutline = true; g.add(glow);
-    const flame = new THREE.Mesh(new THREE.ConeGeometry(.24,1.1,16), new THREE.MeshBasicMaterial({ color: style==='normal' ? 0x5fb0ff : tint }));
+    const glow = new THREE.Mesh(new THREE.CircleGeometry(.27,20), basic(glowCol)); glow.position.z = .52; glow.userData.noOutline = true; g.add(glow);
+    const flame = new THREE.Mesh(new THREE.ConeGeometry(.24,1.1,16), basic(style==='normal' ? 0x5fb0ff : tint));
     flame.rotation.x = Math.PI/2; flame.position.z = 1.08; flame.userData.noOutline = true; g.add(flame); V.flames.push(flame);
   }
   g.scale.setScalar(MOD_SCALE[size]);
@@ -260,21 +264,53 @@ function clearDyn(){
     V.dyn.remove(c);
     c.traverse(o => { o.geometry?.dispose(); (Array.isArray(o.material)?o.material:[o.material]).forEach(m => m?.dispose()); });
   }
-  V.pickers = []; V.anchor = {}; V.spr = {}; V.modG = {}; V.flames = [];
+  V.pickers = []; V.anchor = {}; V.spr = {}; V.modG = {}; V.flames = []; V.ghostG = null;
 }
+
+/* ---------- ghost of the module you are about to mount ----------
+   The part being replaced disappears from its socket; a see-through copy of the new one PULSES in exactly the same
+   place (same position as the socket). The link to the UI row of the new part is the thin 2D line drawn by
+   placeLinks (no 3D arrow). The soft pulse (opacity of body + outline) is driven every frame by placeGhost. */
+function buildGhost(s, item, fits){
+  const sc = MOD_SCALE[s.size], col = fits ? 0x63e07a : 0xff5a5a;
+  const mod = buildModule(item.kind, s.size, fits ? 'ghostgood' : 'ghostbad');
+  mod.position.copy(v3(s.pos));
+  // outline with its own see-through material (opacity uniform), so the whole ghost can fade in and out together
+  const om = new THREE.ShaderMaterial({
+    uniforms:{ color:{ value:new THREE.Color(col) }, thick:{ value:.06/sc }, opacity:{ value:1 } },
+    vertexShader:'uniform float thick; void main(){ gl_Position = projectionMatrix * modelViewMatrix * vec4(position + normal*thick, 1.0); }',
+    fragmentShader:'uniform vec3 color; uniform float opacity; void main(){ gl_FragColor = vec4(color, opacity); }',
+    side:THREE.BackSide, transparent:true, depthWrite:false,
+  });
+  const meshes = []; mod.traverse(o => { if(o.isMesh && !o.userData.noOutline) meshes.push(o); });
+  for(const m of meshes){ const o = new THREE.Mesh(m.geometry, om); o.userData.outline = true; m.add(o); }
+  const mats = new Map(); mod.traverse(o => { if(o.isMesh && !o.userData.outline) mats.set(o.material, o.material.opacity); });   // body materials and their resting opacity
+  V.dyn.add(mod);
+  V.ghostG = { mod, om, mats };
+}
+function placeGhost(t){
+  const G = V.ghostG; if(!G) return;
+  const k = .3 + .7*(.5 + .5*Math.sin(t*4.5));          // soft pulse, ~1.4 s per cycle (same rhythm as the diff figures)
+  for(const [m, base] of G.mats) m.opacity = base * k;
+  G.om.uniforms.opacity.value = k;
+}
+
 function renderShip(){
   if(!V.ready) return;
   clearDyn();
   V.shipRoot.visible = !BODY.unknown;   // an unknown ship leaves the 3D scene empty (just the dock)
   if(BODY.unknown){ V.links = []; const lk = $('#links'); if(lk) lk.innerHTML = ''; return; }
-  const withPv = PV && PV.to;
+  // mounting a MODULE (empty socket or replacing a module): the current build stays drawn as it is and the new part
+  // appears as a floating ghost with an arrow (buildGhost). Anything else (arms) still draws the previewed build in place.
+  const ghostSid = PV && PV.to && !isPylon(PV.to) && S.att[PV.sid]?.t!=='pyl' ? PV.sid : null;
+  const withPv = PV && PV.to && !ghostSid;
   const att = withPv ? PV.att : S.att;
   const disp = withPv ? layout(PV.att) : LY;
   V.disp = disp; V.att = att;
 
   const ghost = new Set(), rem = new Set(); let gstyle = 'good';
   if(PV){
-    if(PV.to){ gstyle = PV.fits ? 'good' : 'bad'; disp.list.forEach(s => { if(s.id===PV.sid || s.id.startsWith(PV.sid+'.')) ghost.add(s.id); }); }
+    if(PV.to){ gstyle = PV.fits ? 'good' : 'bad'; if(!ghostSid) disp.list.forEach(s => { if(s.id===PV.sid || s.id.startsWith(PV.sid+'.')) ghost.add(s.id); }); }
     else LY.list.forEach(s => { if(s.id===PV.sid || s.id.startsWith(PV.sid+'.')) rem.add(s.id); });
   }
   const styleOf = id => ghost.has(id) ? gstyle : rem.has(id) ? 'rem' : 'normal';
@@ -295,7 +331,7 @@ function renderShip(){
       if(oCol!=null) addOutline(ag, oCol, .05);
       V.dyn.add(ag);
     }
-    if(a && a.t==='mod'){                          // module
+    if(a && a.t==='mod' && s.id!==ghostSid){       // module (the one being replaced is not drawn: its ghost-replacement pulses in its place)
       const it = ITEM(a.id), mg = buildModule(it.kind, s.size, st);
       mg.position.copy(v3(s.pos)); V.dyn.add(mg); V.modG[s.id] = mg;
       if(oCol!=null) addOutline(mg, oCol, .07/MOD_SCALE[s.size]);
@@ -306,7 +342,7 @@ function renderShip(){
     const occupied = !!a;
     if(!S.view && !occupied){                        // no markers in view mode
       let col = SIZE[s.size].color, dashed = !a;
-      if(ghost.has(s.id) && !occupied){ col = gstyle==='good' ? '#63e07a' : '#ff5a5a'; dashed = true; }
+      if((ghost.has(s.id) || s.id===ghostSid) && !occupied){ col = gstyle==='good' ? '#63e07a' : '#ff5a5a'; dashed = true; }
       else if(sel){ col = '#f4623a'; } else if(hov){ col = '#ffffff'; }
       const sp = makeSprite(ringTexture(SIZE[s.size].shape, col, dashed));
       sp.position.copy(v3(s.pos)); sp.userData.base = SPR_SIZE[s.size] * (occupied ? 1.7 : 1);
@@ -327,11 +363,14 @@ function renderShip(){
     const mg = buildModule(g.mod.kind, g.mod.size, 'normal'); mg.position.copy(v3(g.pos)); V.dyn.add(mg);
   }
 
-  // tags
+  if(ghostSid && disp.byId[ghostSid]) buildGhost(disp.byId[ghostSid], ITEM(PV.to), PV.fits);
+
+  // tags (during a module preview they name the incoming part, like before the ghost existed)
+  const tagAtt = PV && PV.to ? PV.att : att;
   const fill = (el, id) => {
     const s = id && disp.byId[id];
     if(!s){ el.style.display='none'; el.dataset.slot=''; return; }
-    const at = att[id], it = at ? ITEM(at.id) : null;
+    const at = tagAtt[id], it = at ? ITEM(at.id) : null;
     el.dataset.slot = id;
     el.innerHTML = `<b>${it ? rarDot(it) + it.name.toUpperCase() : 'EMPTY'}</b>`;
     el.style.display = 'block';
@@ -429,13 +468,19 @@ function placeLinks(){
   if(!V.links.length) return;
   const sr = $('#stage').getBoundingClientRect(), k = S.scale || 1, box = $('#shipbox');
   const list = $('#left .lp-body')?.getBoundingClientRect();
+  // mounting a module from the cargo: the line starts from the cargo row of the NEW part (not from the socket list row)
+  const mount = PV && PV.to && !isPylon(PV.to) ? PV.sid : null;
+  const cargoRow = mount ? document.querySelector(`#cargoPanel .cg-row[data-item="${PV.to}"]`) : null;
+  const cargoBox = cargoRow ? $('#cargoPanel .cg-list')?.getBoundingClientRect() : null;
   const cam = V.camera.position, occTick = (V.linkTick = (V.linkTick+1) % 4) === 0;
   for(const L of V.links){
     const an = V.anchor[L.id], sel = S.sel===L.id && S.intSel==null && !noSel(), hov = S.hoverSlot===L.id;
-    if(!sel && !hov){ L.path.setAttribute('class','off'); L.dot.setAttribute('class','off'); continue; }   // only the selected and the hovered socket are linked
-    let show = !!an && !!L.row && !!list && (S.focus!=='cargo' || sel);
+    const mounting = !!cargoRow && mount===L.id;
+    if(!mounting && !sel && !hov){ L.path.setAttribute('class','off'); L.dot.setAttribute('class','off'); continue; }   // only the selected / hovered socket (or the one being mounted) is linked
+    const rowEl = mounting ? cargoRow : L.row, box0 = mounting ? cargoBox : list;
+    let show = !!an && !!rowEl && !!box0 && (mounting || S.focus!=='cargo' || sel);
     let r = null;
-    if(show){ r = L.row.getBoundingClientRect(); show = r.height > 0 && r.top >= list.top - 1 && r.bottom <= list.bottom + 1; }
+    if(show){ r = rowEl.getBoundingClientRect(); show = r.height > 0 && r.top >= box0.top - 1 && r.bottom <= box0.bottom + 1; }
     if(show){
       an.getWorldPosition(V.tmp);
       if(occTick){
@@ -445,15 +490,15 @@ function placeLinks(){
         V.raycaster.far = Infinity;
       }
       const p = V.tmp.clone().project(V.camera);
-      show = (!L.occ || sel || hov) && p.z <= 1;   // the selected / hovered socket is always linked, even on the far side of the hull
+      show = (!L.occ || sel || hov || mounting) && p.z <= 1;   // the selected / hovered / mounted socket is always linked, even on the far side of the hull
       if(show){
         const x1 = box.offsetLeft + (p.x*.5+.5)*SHIP_W, y1 = box.offsetTop + (-p.y*.5+.5)*SHIP_H;
         const x0 = (r.right - sr.left)/k, y0 = (r.top + r.height/2 - sr.top)/k;
-        L.path.setAttribute('d', linkPath(x0, y0, x1, y1, hov && !sel ? 16 : 0));
+        L.path.setAttribute('d', linkPath(x0, y0, x1, y1, hov && !sel && !mounting ? 16 : 0));
         L.dot.setAttribute('cx', x1.toFixed(1)); L.dot.setAttribute('cy', y1.toFixed(1));
       }
     }
-    const cls = show ? (sel ? 'sel' : hov ? 'hov' : '') : 'off';
+    const cls = show ? (sel || mounting ? 'sel' : hov ? 'hov' : '') : 'off';
     L.path.setAttribute('class', cls); L.dot.setAttribute('class', cls);
   }
 }
@@ -485,6 +530,7 @@ function animateShip(now){
     sp.scale.setScalar(sp.userData.base * (S.sel===id ? 1 + Math.sin(t*5)*.1 : 1) * popOf(id));
   }
   for(const id in V.modG) V.modG[id].scale.setScalar(MOD_SCALE[V.disp.byId[id].size] * popOf(id));
+  placeGhost(t);   // blinking ghost of the part being mounted
   V.flames.forEach((f,i) => f.scale.set(1,.75+.25*Math.sin(t*38+i),1));
   placeTag($('#tagSel')); placeTag($('#tagHov')); placeLabels(); placeLinks();
   V.renderer.render(V.scene, V.camera);

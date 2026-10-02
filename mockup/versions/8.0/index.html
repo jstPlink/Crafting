@@ -844,10 +844,11 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .ptick{display:flex;gap:2px;margin-top:6px;height:14px}
 .ptick i{flex:1;min-width:0;background:#2a2f36}
 .ptick i.on{background:#fff}
-.ptick i.df.up{background:var(--good);animation:tickblink .7s steps(1) infinite}
-.ptick i.df.dn{background:var(--bad);animation:tickblink .7s steps(1) infinite}
-.ptick i.df.nt{background:#cfd6dc;animation:tickblink .7s steps(1) infinite}
-@keyframes tickblink{50%{opacity:.15}}
+.ptick i.df.up{background:var(--good);animation:dvpulse 1.4s ease-in-out infinite}
+.ptick i.df.dn{background:var(--bad);animation:dvpulse 1.4s ease-in-out infinite}
+.ptick i.df.nt{background:#cfd6dc;animation:dvpulse 1.4s ease-in-out infinite}
+/* soft pulse shared by the diff figures and the POWER ticks that change: fades down and back up, no hard on/off */
+@keyframes dvpulse{0%,100%{opacity:1}50%{opacity:.3}}
 /* vertical LV tag, right of the module icon (socket list rows) */
 .vtag{flex:none;align-self:stretch;width:15px;display:flex;align-items:center;justify-content:center;background:var(--rc);color:#0b0d10;
   font-size:11px;font-weight:700;letter-spacing:.04em;line-height:1;writing-mode:vertical-rl;transform:rotate(180deg);margin-right:8px}
@@ -985,10 +986,18 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 #stage.ux-slide.ux-card .cw .wtag{height:46px;font-size:18px}
 /* a value that carries the colour of its change (card NEW window, ship data, cargo rows) */
 b.dv{padding:0 8px}
+/* direction of the improvement next to the new value in every diff: up arrow = better, down arrow = worse (data-d = up / dn) */
+b.dv[data-d]::before{font-size:.55em;margin-right:5px;vertical-align:.18em;font-weight:700}
+b.dv[data-d="up"]::before{content:"▲"}
+b.dv[data-d="dn"]::before{content:"▼"}
+/* every diff figure blinks (same rhythm as the POWER ticks) to draw the eye to what would change */
+b.dv{animation:dvpulse 1.4s ease-in-out infinite}
+@media (prefers-reduced-motion:reduce){b.dv{animation:none}}
 .cg-row .sub b.dv{padding:0 6px}
 /* the value a figure has now, dimmed, in front of the new (coloured) one: "99 – 176" */
 .ov{color:#8a939b;font-weight:600}
 .ovd{color:#8a939b;margin:0 6px}
+/* ship data: the NEW (coloured) value sits at the far left of the cell (under the label); the current value never moves or changes colour */
 #stage.ux-slide #right .ovc .dslot{align-items:center;justify-content:flex-start;font-size:18px;white-space:nowrap}
 .cg-row .sub .ov,.cg-row .sub .ovd{font-size:16px}
 </style>
