@@ -285,7 +285,7 @@ function renderShip(){
     const a = att[s.id], st = styleOf(s.id);
     const an = new THREE.Object3D(); an.position.copy(v3(s.pos)); V.dyn.add(an); V.anchor[s.id] = an;
 
-    const sel = S.sel===s.id, hov = S.hoverSlot===s.id;
+    const sel = S.sel===s.id && S.intSel==null && !noSel(), hov = S.hoverSlot===s.id;
     const oCol = !S.view && (sel ? OUTLINE.sel : hov && !s.pylon ? OUTLINE.hov : null);   // arms: never a hover highlight
     if(s.pylon){                                   // struts
       const mat = pylMat(st), r = PYL_R[s.size], ag = new THREE.Group();
@@ -336,7 +336,7 @@ function renderShip(){
     el.innerHTML = `<b>${it ? rarDot(it) + it.name.toUpperCase() : 'EMPTY'}</b>`;
     el.style.display = 'block';
   };
-  fill($('#tagSel'), disp.byId[S.sel]?.pylon ? null : S.sel);   // a selected arm shows only its outline
+  fill($('#tagSel'), S.intSel!=null || noSel() || disp.byId[S.sel]?.pylon ? null : S.sel);   // a selected arm shows only its outline
   // with the socket labels on, hover highlights the small label instead of opening a second big tag
   const labelsOn = !S.view && typeof flag==='function' && flag('socketLabels');
   fill($('#tagHov'), !labelsOn && S.hoverSlot && S.hoverSlot!==S.sel ? S.hoverSlot : null);
@@ -431,7 +431,7 @@ function placeLinks(){
   const list = $('#left .lp-body')?.getBoundingClientRect();
   const cam = V.camera.position, occTick = (V.linkTick = (V.linkTick+1) % 4) === 0;
   for(const L of V.links){
-    const an = V.anchor[L.id], sel = S.sel===L.id, hov = S.hoverSlot===L.id;
+    const an = V.anchor[L.id], sel = S.sel===L.id && S.intSel==null && !noSel(), hov = S.hoverSlot===L.id;
     if(!sel && !hov){ L.path.setAttribute('class','off'); L.dot.setAttribute('class','off'); continue; }   // only the selected and the hovered socket are linked
     let show = !!an && !!L.row && !!list && (S.focus!=='cargo' || sel);
     let r = null;
