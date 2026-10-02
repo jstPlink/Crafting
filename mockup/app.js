@@ -29,6 +29,9 @@ const SIZE_ORDER = [1,2,3];   // small sockets first, large at the bottom
 
 // app version: bumped on every commit (the CI build number is shown next to it)
 const APP_VERSION = '8.0';
+// what the version button shows: a minor update of the current version (8.1) is marked here WITHOUT opening a new selectable version
+// (no snapshot, no manifest entry, same save keys: those follow APP_VERSION). Set it back to APP_VERSION when a real new version starts.
+const APP_LABEL = '8.1';
 
 const KIND = {
   primary:   { cls:'pri', label:'Primary Weapons',   short:'Primary' },
@@ -1704,7 +1707,7 @@ function boot(){
     for(const c of 'UULULUULULUULULUULUL') { const id = c==='U' ? U.shift() : L.shift(); if(id) BODY_LIST.push(id); } }
   loadLocal(); loadFlags(); applyFlags();
   Object.assign(S.rot, homeRot());
-  $('#build').textContent = `v${APP_VERSION}`;
+  $('#build').textContent = `v${APP_LABEL}`;
   renderTop(); initShip(); renderAll(); requestAnimationFrame(pollPad);
   let seen = false; try{ seen = !!localStorage.getItem(INTRO_KEY); }catch(e){}
   if(!seen) openIntro();

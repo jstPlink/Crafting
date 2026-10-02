@@ -49,7 +49,7 @@ Ordine di caricamento in `index.html`: `three.min.js` → `GLTFLoader.js` → `a
 - Debug URL: `?model=<url.glb>` carica un body personalizzato.
 - Docker: `docker compose up -d --build` → `http://localhost:6480`. In produzione l'immagine viene da `ghcr.io/jstplink/crafting:latest`.
 - `version.json` è generato dal Dockerfile (versione CI `1.0.<run>`, sha, data). In locale non esiste. La scritta build mostra solo `v<APP_VERSION>`; i dettagli CI sono nel tooltip quando `version.json` esiste. Il pulsante versione (stessa scritta) apre il menu versioni (§3b).
-- **Versione app**: `APP_VERSION` in `app.js` (oggi `8.0`) va incrementata a ogni versione e la versione va congelata con `scripts/snapshot.py` (§3b).
+- **Versione app**: `APP_VERSION` in `app.js` (oggi `8.0`) va incrementata a ogni versione e la versione va congelata con `scripts/snapshot.py` (§3b). **`APP_LABEL`** (oggi `8.1`) è solo il testo del pulsante versione in alto: serve a segnare un aggiornamento *minore* della versione corrente (la copia di lavoro mostra `v8.1`, lo snapshot `versions/8.0` mostra `v8.0`) **senza** aprire una versione selezionabile — nessuno snapshot, nessuna voce nel manifest, stesse chiavi di salvataggio (queste seguono `APP_VERSION`). Quando inizia una versione vera, riportare `APP_LABEL` uguale a `APP_VERSION`.
 - nginx serve html/js con `no-cache` e `vendor/` con cache di 7 giorni.
 - **Cache-busting** (Dockerfile): a ogni build ogni `src="….js"` locale di **ogni** `index.html` (radice e `versions/<v>/`) riceve `?v=<sha>`, così né browser né CDN mischiano script vecchi con html nuovo. Gli script nuovi che si aggiungono a un `index.html` sono coperti in automatico (purché locali e senza `?`).
 
